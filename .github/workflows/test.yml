@@ -33,7 +33,7 @@ jobs:
 
     - name: Run tests with coverage
       run: |
-        uv run --system pytest
+        pytest
 
   lint:
     runs-on: ubuntu-latest
@@ -56,11 +56,11 @@ jobs:
 
     - name: Run ruff check
       run: |
-        uv run --system ruff check src/
+        ruff check src/
 
     - name: Run ruff format check
       run: |
-        uv run --system ruff format --check src/
+        ruff format --check src/
 
   typecheck:
     runs-on: ubuntu-latest
@@ -83,4 +83,4 @@ jobs:
 
     - name: Run mypy
       run: |
-        uv run --system mypy src/
+        mypy src/
