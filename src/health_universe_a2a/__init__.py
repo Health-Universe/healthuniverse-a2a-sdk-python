@@ -1,0 +1,84 @@
+"""
+Health Universe A2A SDK for Python
+
+A simple, batteries-included SDK for building A2A-compliant agents.
+"""
+
+# Core agent classes
+from health_universe_a2a.base import A2AAgent
+from health_universe_a2a.async_agent import AsyncAgent
+from health_universe_a2a.streaming import StreamingAgent
+
+# Context classes
+from health_universe_a2a.context import AsyncContext, MessageContext
+
+# Validation types
+from health_universe_a2a.types.validation import (
+    ValidationAccepted,
+    ValidationRejected,
+    ValidationResult,
+)
+
+# Extension types
+from health_universe_a2a.types.extensions import AgentExtension
+
+# Inter-agent communication
+from health_universe_a2a.inter_agent import InterAgentClient, AgentResponse
+
+# Server utilities (optional - requires server extra)
+try:
+    from health_universe_a2a.server import create_app, serve
+
+    _SERVER_AVAILABLE = True
+except ImportError:
+    _SERVER_AVAILABLE = False
+
+    def create_app(*args, **kwargs):
+        raise ImportError(
+            "Server dependencies not installed. "
+            'Install with: pip install "health-universe-a2a[server]"'
+        )
+
+    def serve(*args, **kwargs):
+        raise ImportError(
+            "Server dependencies not installed. "
+            'Install with: pip install "health-universe-a2a[server]"'
+        )
+
+
+# A2A protocol types (re-exported for convenience)
+from a2a.types import (
+    AgentCard,
+    AgentProvider,
+    AgentCapabilities,
+    AgentSkill,
+)
+
+__version__ = "0.1.0"
+
+__all__ = [
+    # Agent classes
+    "A2AAgent",
+    "StreamingAgent",
+    "AsyncAgent",
+    # Context classes
+    "MessageContext",
+    "AsyncContext",
+    # Validation types
+    "ValidationAccepted",
+    "ValidationRejected",
+    "ValidationResult",
+    # Extension types
+    "AgentExtension",
+    # Inter-agent communication
+    "InterAgentClient",
+    "AgentResponse",
+    # Server utilities
+    "create_app",
+    "serve",
+    # A2A protocol types
+    "AgentCard",
+    "AgentProvider",
+    "AgentCapabilities",
+    "AgentSkill",
+]
