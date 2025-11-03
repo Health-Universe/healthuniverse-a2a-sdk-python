@@ -15,9 +15,8 @@ import json
 from typing import Any
 
 from health_universe_a2a import (
-    StreamingAgent,
     MessageContext,
-    AgentResponse,
+    StreamingAgent,
     ValidationAccepted,
     ValidationRejected,
     ValidationResult,
@@ -50,9 +49,7 @@ class OrchestratorAgent(StreamingAgent):
     def get_provider_url(self) -> str:
         return "https://example.com"
 
-    async def validate_message(
-        self, message: str, metadata: dict[str, Any]
-    ) -> ValidationResult:
+    async def validate_message(self, message: str, metadata: dict[str, Any]) -> ValidationResult:
         """Validate that message has a valid command."""
         try:
             request = json.loads(message)
@@ -100,9 +97,7 @@ class OrchestratorAgent(StreamingAgent):
 
         return "Unknown command"
 
-    async def _analyze_workflow(
-        self, data: str, options: dict, context: MessageContext
-    ) -> str:
+    async def _analyze_workflow(self, data: str, options: dict, context: MessageContext) -> str:
         """
         Analyze workflow: preprocessor → analyzer → formatter
 
@@ -169,9 +164,7 @@ class OrchestratorAgent(StreamingAgent):
             self.logger.error(f"Analysis workflow failed: {e}")
             return f"Analysis failed: {str(e)}"
 
-    async def _process_workflow(
-        self, data: str, options: dict, context: MessageContext
-    ) -> str:
+    async def _process_workflow(self, data: str, options: dict, context: MessageContext) -> str:
         """
         Process workflow: parallel processors → merger
 
@@ -181,7 +174,6 @@ class OrchestratorAgent(StreamingAgent):
 
         # Call multiple processors in parallel
         processors = ["/processor-a", "/processor-b", "/processor-c"]
-        results = []
 
         # Launch parallel calls
         await context.update_progress(f"Processing with {len(processors)} agents...", 0.3)
@@ -203,7 +195,7 @@ class OrchestratorAgent(StreamingAgent):
                 result = await task
                 completed_results.append(result.text)
                 await context.update_progress(
-                    f"Completed {i+1}/{len(processors)} processors",
+                    f"Completed {i + 1}/{len(processors)} processors",
                     0.3 + (0.4 * (i + 1) / len(processors)),
                 )
             except Exception as e:
@@ -221,9 +213,7 @@ class OrchestratorAgent(StreamingAgent):
 
         return merger_response.text
 
-    async def _transform_workflow(
-        self, data: str, options: dict, context: MessageContext
-    ) -> str:
+    async def _transform_workflow(self, data: str, options: dict, context: MessageContext) -> str:
         """
         Transform workflow: local + remote agents
 
@@ -304,37 +294,42 @@ if __name__ == "__main__":
     print("\nEnvironment variables:")
     print("  LOCAL_AGENT_BASE_URL - Base URL for local agents (default: http://localhost:8501)")
     print("  AGENT_REGISTRY - JSON map of agent names to URLs")
-    print("    Example: AGENT_REGISTRY='{\"analyzer\": \"http://...\"}'")
+    print('    Example: AGENT_REGISTRY=\'{"analyzer": "http://..."}\'')
 
     print("\n" + "=" * 70)
     print("Example requests:")
     print("=" * 70)
 
     print("\n1. Analysis workflow (sequential):")
-    print(json.dumps({
-        "command": "analyze",
-        "data": "Sample data to analyze",
-        "options": {
-            "analysis_mode": "detailed",
-            "output_format": "markdown"
-        }
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "command": "analyze",
+                "data": "Sample data to analyze",
+                "options": {"analysis_mode": "detailed", "output_format": "markdown"},
+            },
+            indent=2,
+        )
+    )
 
     print("\n2. Process workflow (parallel):")
-    print(json.dumps({
-        "command": "process",
-        "data": "Data for parallel processing",
-        "options": {}
-    }, indent=2))
+    print(
+        json.dumps(
+            {"command": "process", "data": "Data for parallel processing", "options": {}}, indent=2
+        )
+    )
 
     print("\n3. Transform workflow (local + remote):")
-    print(json.dumps({
-        "command": "transform",
-        "data": "Data to transform",
-        "options": {
-            "remote_validator_url": "https://api.example.com/validator"
-        }
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "command": "transform",
+                "data": "Data to transform",
+                "options": {"remote_validator_url": "https://api.example.com/validator"},
+            },
+            indent=2,
+        )
+    )
 
     print("\n" + "=" * 70)
     print("Key concepts:")

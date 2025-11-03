@@ -80,9 +80,7 @@ class StreamingAgent(A2AAgent):
     # 5. Streaming updates via EventQueue
     # 6. Handling errors and completion
 
-    def _build_message_context(
-        self, request_context: Any, updater: Any
-    ) -> MessageContext:
+    def _build_message_context(self, request_context: Any, updater: Any) -> MessageContext:
         """
         Build simplified context from A2A request context.
 

@@ -1,6 +1,6 @@
 """Tests for base A2AAgent class"""
 
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -176,9 +176,7 @@ class TestAgentWithHooks(A2AAgent):
     async def on_task_start(self, message: str, context: MessageContext) -> None:
         self.hook_calls.append("on_task_start")
 
-    async def on_task_complete(
-        self, message: str, result: str, context: MessageContext
-    ) -> None:
+    async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:
         self.hook_calls.append("on_task_complete")
 
     async def on_task_error(
@@ -282,10 +280,12 @@ class TestHandleRequestFlow:
         context._updater = AsyncMock()
 
         # Make process_message raise an error
-        original_process = agent.process_message
+        _ = agent.process_message
+
         async def error_process(msg: str, ctx: MessageContext) -> str:
             agent.hook_calls.append("process_message")
             raise RuntimeError("Test error")
+
         agent.process_message = error_process
 
         # Should raise the error
@@ -313,6 +313,7 @@ class TestHandleRequestFlow:
         async def error_process(msg: str, ctx: MessageContext) -> str:
             agent.hook_calls.append("process_message")
             raise ValueError("Internal error")
+
         agent.process_message = error_process
 
         # Should raise the error

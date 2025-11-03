@@ -1,5 +1,7 @@
 # Health Universe A2A SDK for Python
 
+[![Test](https://github.com/Health-Universe/healthuniverse-a2a-sdk-python/actions/workflows/test.yml/badge.svg)](https://github.com/Health-Universe/healthuniverse-a2a-sdk-python/actions/workflows/test.yml)
+
 A simple, batteries-included Python SDK for building [A2A-compliant agents](https://a2a.ai) for the Health Universe platform.
 
 ## Features

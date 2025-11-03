@@ -15,6 +15,7 @@ Run with:
 
 import asyncio
 import json
+
 from health_universe_a2a import (
     A2AAgent,
     MessageContext,
@@ -43,7 +44,9 @@ class DataProcessorAgent(A2AAgent):
 
     # Custom validation
 
-    async def validate_message(self, message: str, metadata: dict) -> ValidationAccepted | ValidationRejected:
+    async def validate_message(
+        self, message: str, metadata: dict
+    ) -> ValidationAccepted | ValidationRejected:
         """Validate that the message is not empty and not too long."""
         if not message or len(message.strip()) == 0:
             return ValidationRejected(reason="Message cannot be empty")
@@ -64,8 +67,6 @@ class DataProcessorAgent(A2AAgent):
         words = message.split()
 
         # Simulate processing with progress updates
-        total_steps = 4
-
         await context.update_progress("Analyzing message...", 0.0)
         await asyncio.sleep(0.5)
 
@@ -133,9 +134,7 @@ class DataProcessorAgent(A2AAgent):
         """Called before processing each message."""
         self.logger.info(f"📝 Starting task for user: {context.user_id}")
 
-    async def on_task_complete(
-        self, message: str, result: str, context: MessageContext
-    ) -> None:
+    async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:
         """Called after successfully processing a message."""
         self.processed_count += 1
         self.logger.info(f"✅ Task completed! Total processed: {self.processed_count}")

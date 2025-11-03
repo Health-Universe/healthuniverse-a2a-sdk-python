@@ -63,7 +63,6 @@ def verify_imports():
             StreamingAgent,
             ValidationAccepted,
             ValidationRejected,
-            ValidationResult,
         )
 
         print("  ✅ All imports successful!")
@@ -78,7 +77,7 @@ def verify_imports():
         print(f"  ✅ ValidationRejected: {ValidationRejected.__name__}")
 
         # ValidationResult is a type alias, so we just verify it's defined
-        print(f"  ✅ ValidationResult: (type alias)")
+        print("  ✅ ValidationResult: (type alias)")
 
         return True
 

@@ -7,7 +7,7 @@ import os
 from typing import Any
 
 import httpx
-from a2a.types import Message, Part, DataPart, TextPart, Role
+from a2a.types import DataPart, Message, Part, Role, TextPart
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +165,7 @@ class InterAgentClient:
         self.agent_identifier = agent_identifier
         self.auth_token = auth_token
         self.local_base_url = (
-            local_base_url
-            or os.getenv("LOCAL_AGENT_BASE_URL", "http://localhost:8501")
+            local_base_url or os.getenv("LOCAL_AGENT_BASE_URL", "http://localhost:8501")
         ).rstrip("/")
         self.agent_registry = agent_registry or self._load_agent_registry()
         self.timeout = timeout
@@ -256,9 +255,7 @@ class InterAgentClient:
 
         return False
 
-    async def _call_with_retry(
-        self, method: str, url: str, **kwargs
-    ) -> httpx.Response:
+    async def _call_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
         """
         Make HTTP call with retry logic.
 
@@ -292,9 +289,7 @@ class InterAgentClient:
 
                 # Don't retry on last attempt
                 if attempt >= self.max_retries:
-                    logger.error(
-                        f"All {self.max_retries} retries failed for {url}: {e}"
-                    )
+                    logger.error(f"All {self.max_retries} retries failed for {url}: {e}")
                     raise
 
                 # Calculate backoff delay (exponential: 1s, 2s, 4s, ...)
@@ -352,9 +347,7 @@ class InterAgentClient:
         result = response.json()
         return AgentResponse(result)
 
-    async def call_with_data(
-        self, data: Any, timeout: float | None = None
-    ) -> AgentResponse:
+    async def call_with_data(self, data: Any, timeout: float | None = None) -> AgentResponse:
         """
         Call the agent with structured data.
 

@@ -1,6 +1,5 @@
 """AsyncAgent for long-running tasks"""
 
-import asyncio
 import logging
 import os
 from typing import Any
@@ -17,7 +16,6 @@ from health_universe_a2a.types.extensions import (
 from health_universe_a2a.types.validation import (
     ValidationAccepted,
     ValidationRejected,
-    ValidationResult,
 )
 from health_universe_a2a.update_client import BackgroundUpdateClient
 
@@ -175,20 +173,30 @@ class AsyncAgent(A2AAgent):
             duration_msg = ""
             if validation_result.estimated_duration_seconds:
                 minutes = validation_result.estimated_duration_seconds // 60
-                duration_msg = f" (estimated: {minutes} min)" if minutes > 0 else f" (estimated: {validation_result.estimated_duration_seconds}s)"
+                duration_msg = (
+                    f" (estimated: {minutes} min)"
+                    if minutes > 0
+                    else f" (estimated: {validation_result.estimated_duration_seconds}s)"
+                )
 
             ack_message = f"Job submitted successfully{duration_msg}. Processing will continue in the background."
 
-            self.logger.info(f"Validation passed, sending ack via SSE")
+            self.logger.info("Validation passed, sending ack via SSE")
 
             # Send ack via immediate_updater (SSE)
             if context._updater:
                 ack_metadata = {}
                 if validation_result.estimated_duration_seconds:
-                    ack_metadata["estimated_duration_seconds"] = validation_result.estimated_duration_seconds
+                    ack_metadata["estimated_duration_seconds"] = (
+                        validation_result.estimated_duration_seconds
+                    )
 
                 text_part = TextPart(text=ack_message)
-                msg = Message(role=Role.agent, parts=[Part(root=text_part)], metadata=ack_metadata if ack_metadata else None)
+                msg = Message(
+                    role=Role.agent,
+                    parts=[Part(root=text_part)],
+                    metadata=ack_metadata if ack_metadata else None,
+                )
                 await context._updater.submit(message=msg)
 
             # Step 4: Extract background job params and create POST updater
@@ -198,7 +206,9 @@ class AsyncAgent(A2AAgent):
 
             from health_universe_a2a.types.extensions import BackgroundJobExtensionParams
 
-            bg_params = BackgroundJobExtensionParams.model_validate(metadata[BACKGROUND_JOB_EXTENSION_URI])
+            bg_params = BackgroundJobExtensionParams.model_validate(
+                metadata[BACKGROUND_JOB_EXTENSION_URI]
+            )
             job_id = bg_params.job_id
             api_key = bg_params.api_key
 
@@ -312,9 +322,7 @@ class AsyncAgent(A2AAgent):
 
         # Create update client
         base_url = os.getenv("HU_LANGGRAPH_URL", "http://localhost:8000")
-        update_client = BackgroundUpdateClient(
-            job_id=job_id, api_key=api_key, base_url=base_url
-        )
+        update_client = BackgroundUpdateClient(job_id=job_id, api_key=api_key, base_url=base_url)
 
         return AsyncContext(
             job_id=job_id,

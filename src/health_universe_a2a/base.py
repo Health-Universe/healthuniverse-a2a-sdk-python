@@ -7,9 +7,9 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from a2a.types import (
+    AgentCapabilities,
     AgentCard,
     AgentProvider,
-    AgentCapabilities,
     AgentSkill,
     Message,
     Part,
@@ -17,6 +17,7 @@ from a2a.types import (
     TextPart,
 )
 
+from health_universe_a2a import AgentResponse
 from health_universe_a2a.context import MessageContext
 from health_universe_a2a.types.extensions import AgentExtension
 from health_universe_a2a.types.validation import (
@@ -163,7 +164,7 @@ class A2AAgent(ABC):
         # Step 3: Handle acceptance
         if isinstance(validation_result, ValidationAccepted):
             self.logger.info(
-                f"Message validation passed"
+                "Message validation passed"
                 + (
                     f" (estimated: {validation_result.estimated_duration_seconds}s)"
                     if validation_result.estimated_duration_seconds
@@ -320,39 +321,27 @@ class A2AAgent(ABC):
             description=self.get_agent_description(),
             version=self.get_agent_version(),
             url=base_url,
-
             # Transport configuration - using JSON-RPC
             preferredTransport="JSONRPC",
-            additionalInterfaces=[
-                {
-                    "url": base_url,
-                    "transport": "JSONRPC"
-                }
-            ],
-
+            additionalInterfaces=[{"url": base_url, "transport": "JSONRPC"}],
             # Provider information
             provider=AgentProvider(
-                organization=self.get_provider_organization(),
-                url=self.get_provider_url()
+                organization=self.get_provider_organization(), url=self.get_provider_url()
             ),
-
             # Capabilities
             capabilities=AgentCapabilities(
                 streaming=self.supports_streaming(),
                 push_notifications=self.supports_push_notifications(),
-                extensions=self.get_extensions()
+                extensions=self.get_extensions(),
             ),
-
             # Skills (optional but recommended)
             skills=self.get_agent_skills(),
-
             # Security (can be extended in subclasses)
             securitySchemes=self.get_security_schemes(),
             security=self.get_security_requirements(),
-
             # Input/output modes
             defaultInputModes=self.get_supported_input_formats(),
-            defaultOutputModes=self.get_supported_output_formats()
+            defaultOutputModes=self.get_supported_output_formats(),
         )
 
     def get_base_url(self) -> str:
@@ -548,7 +537,7 @@ class A2AAgent(ABC):
         message: str,
         context: MessageContext,
         timeout: float = 30.0,
-    ) -> "AgentResponse":
+    ) -> AgentResponse:
         """
         Call another A2A-compliant agent with JWT propagation.
 
@@ -587,7 +576,6 @@ class A2AAgent(ABC):
 
                 return response.text
         """
-        from health_universe_a2a.inter_agent import AgentResponse
 
         client = context.create_inter_agent_client(agent_identifier, timeout=timeout)
         try:
@@ -640,7 +628,6 @@ class A2AAgent(ABC):
                 else:
                     return response.text
         """
-        from health_universe_a2a.inter_agent import AgentResponse
 
         client = context.create_inter_agent_client(agent_identifier, timeout=timeout)
         try:
@@ -698,7 +685,7 @@ class A2AAgent(ABC):
 
     # Optional lifecycle hooks
 
-    async def on_startup(self) -> None:
+    async def on_startup(self) -> None:  # noqa: B027
         """
         Called when agent starts up.
 
@@ -711,7 +698,7 @@ class A2AAgent(ABC):
         """
         pass
 
-    async def on_shutdown(self) -> None:
+    async def on_shutdown(self) -> None:  # noqa: B027
         """
         Called when agent shuts down.
 
@@ -724,7 +711,7 @@ class A2AAgent(ABC):
         """
         pass
 
-    async def on_task_start(self, message: str, context: MessageContext) -> None:
+    async def on_task_start(self, message: str, context: MessageContext) -> None:  # noqa: B027
         """
         Called after validation passes, before process_message.
 
@@ -741,9 +728,7 @@ class A2AAgent(ABC):
         """
         pass
 
-    async def on_task_complete(
-        self, message: str, result: str, context: MessageContext
-    ) -> None:
+    async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:  # noqa: B027
         """
         Called after process_message completes successfully.
 

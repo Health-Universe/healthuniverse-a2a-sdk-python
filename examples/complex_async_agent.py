@@ -98,9 +98,7 @@ class BatchDataProcessorAgent(AsyncAgent):
                     reason=f"Estimated processing time ({estimated_seconds}s) exceeds maximum ({self.get_max_duration_seconds()}s)"
                 )
 
-            self.logger.info(
-                f"Job validated: {estimated_batches} batches, ~{estimated_seconds}s"
-            )
+            self.logger.info(f"Job validated: {estimated_batches} batches, ~{estimated_seconds}s")
 
             return ValidationAccepted(estimated_duration_seconds=estimated_seconds)
 
@@ -117,17 +115,11 @@ class BatchDataProcessorAgent(AsyncAgent):
     async def on_task_start(self, message: str, context: AsyncContext) -> None:
         """Log job start."""
         self.jobs_processed += 1
-        self.logger.info(
-            f"Starting batch job #{self.jobs_processed} (job_id: {context.job_id})"
-        )
+        self.logger.info(f"Starting batch job #{self.jobs_processed} (job_id: {context.job_id})")
 
-    async def on_task_complete(
-        self, message: str, result: str, context: AsyncContext
-    ) -> None:
+    async def on_task_complete(self, message: str, result: str, context: AsyncContext) -> None:
         """Log job completion."""
-        self.logger.info(
-            f"Batch job #{self.jobs_processed} completed (job_id: {context.job_id})"
-        )
+        self.logger.info(f"Batch job #{self.jobs_processed} completed (job_id: {context.job_id})")
 
     async def on_task_error(
         self, message: str, error: Exception, context: AsyncContext
@@ -171,9 +163,7 @@ class BatchDataProcessorAgent(AsyncAgent):
         total_rows = request.get("estimated_rows", 5000)
         total_batches = (total_rows + batch_size - 1) // batch_size
 
-        self.logger.info(
-            f"Processing {total_rows} rows in {total_batches} batches of {batch_size}"
-        )
+        self.logger.info(f"Processing {total_rows} rows in {total_batches} batches of {batch_size}")
 
         await context.update_progress(
             f"Starting batch processing ({total_batches} batches)...", 0.1
@@ -268,8 +258,8 @@ class BatchDataProcessorAgent(AsyncAgent):
 - **Batch Size**: {batch_size}
 
 ## Results
-- **Valid Records**: {total_valid:,} ({100*total_valid/total_rows:.1f}%)
-- **Invalid Records**: {total_invalid:,} ({100*total_invalid/total_rows:.1f}%)
+- **Valid Records**: {total_valid:,} ({100 * total_valid / total_rows:.1f}%)
+- **Invalid Records**: {total_invalid:,} ({100 * total_invalid / total_rows:.1f}%)
 - **Average Batch Time**: {avg_time:.1f}ms
 
 ## Status
@@ -303,7 +293,11 @@ if __name__ == "__main__":
     print("\nExample request:")
     print(
         json.dumps(
-            {"file_uri": "s3://bucket/large-dataset.csv", "batch_size": 100, "operation": "analyze"},
+            {
+                "file_uri": "s3://bucket/large-dataset.csv",
+                "batch_size": 100,
+                "operation": "analyze",
+            },
             indent=2,
         )
     )

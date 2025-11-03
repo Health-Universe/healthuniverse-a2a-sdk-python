@@ -5,12 +5,18 @@ A simple, batteries-included SDK for building A2A-compliant agents.
 """
 
 # Core agent classes
-from health_universe_a2a.base import A2AAgent
 from health_universe_a2a.async_agent import AsyncAgent
-from health_universe_a2a.streaming import StreamingAgent
+from health_universe_a2a.base import A2AAgent
 
 # Context classes
 from health_universe_a2a.context import AsyncContext, MessageContext
+
+# Inter-agent communication
+from health_universe_a2a.inter_agent import AgentResponse, InterAgentClient
+from health_universe_a2a.streaming import StreamingAgent
+
+# Extension types
+from health_universe_a2a.types.extensions import AgentExtension
 
 # Validation types
 from health_universe_a2a.types.validation import (
@@ -18,12 +24,6 @@ from health_universe_a2a.types.validation import (
     ValidationRejected,
     ValidationResult,
 )
-
-# Extension types
-from health_universe_a2a.types.extensions import AgentExtension
-
-# Inter-agent communication
-from health_universe_a2a.inter_agent import InterAgentClient, AgentResponse
 
 # Server utilities (optional - requires server extra)
 try:
@@ -48,9 +48,9 @@ except ImportError:
 
 # A2A protocol types (re-exported for convenience)
 from a2a.types import (
+    AgentCapabilities,
     AgentCard,
     AgentProvider,
-    AgentCapabilities,
     AgentSkill,
 )
 

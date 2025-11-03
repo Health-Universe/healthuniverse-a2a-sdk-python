@@ -1,7 +1,7 @@
 """Context objects passed to agent process_message methods"""
 
 import os
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from a2a.types import Message, Part, Role, TaskState, TextPart
 from pydantic import BaseModel, ConfigDict, Field

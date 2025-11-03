@@ -32,6 +32,7 @@ BACKGROUND_JOB_EXTENSION_URI = "https://healthuniverse.com/ext/background_job/v1
 
 # Extension parameter models
 
+
 class BackgroundJobExtensionParams(BaseModel):
     """
     Parameters for Background Job extension.

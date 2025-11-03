@@ -1,9 +1,7 @@
 """Integration tests for server functionality."""
 
-import json
 from typing import Any
 
-import pytest
 from starlette.testclient import TestClient
 
 from health_universe_a2a import (
@@ -40,7 +38,9 @@ class TestValidatingAgent(A2AAgent):
     def get_agent_description(self) -> str:
         return "Tests validation"
 
-    async def validate_message(self, message: str, metadata: dict[str, Any]) -> ValidationAccepted | ValidationRejected:
+    async def validate_message(
+        self, message: str, metadata: dict[str, Any]
+    ) -> ValidationAccepted | ValidationRejected:
         if len(message) < 5:
             return ValidationRejected(reason="Message too short")
         return ValidationAccepted()

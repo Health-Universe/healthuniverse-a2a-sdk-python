@@ -1,6 +1,6 @@
 """Validation types for message validation"""
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,6 @@ class ValidationRejected(BaseModel):
 
 # Discriminated union for type-safe validation results
 ValidationResult = Annotated[
-    Union[ValidationAccepted, ValidationRejected],
+    ValidationAccepted | ValidationRejected,
     Field(discriminator="status"),
 ]

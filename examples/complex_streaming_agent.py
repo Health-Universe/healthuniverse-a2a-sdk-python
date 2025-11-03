@@ -132,13 +132,9 @@ class DataAnalysisAgent(StreamingAgent):
     async def on_task_start(self, message: str, context: MessageContext) -> None:
         """Log task start."""
         self.analysis_count += 1
-        self.logger.info(
-            f"Starting analysis #{self.analysis_count} for user {context.user_id}"
-        )
+        self.logger.info(f"Starting analysis #{self.analysis_count} for user {context.user_id}")
 
-    async def on_task_complete(
-        self, message: str, result: str, context: MessageContext
-    ) -> None:
+    async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:
         """Log task completion."""
         self.logger.info(f"Analysis #{self.analysis_count} completed successfully")
 
@@ -233,12 +229,12 @@ class DataAnalysisAgent(StreamingAgent):
         report = f"""# Data Analysis Report
 
 ## Dataset Overview
-- **Size**: {stats['count']} data points
-- **Range**: {stats['min']:.2f} to {stats['max']:.2f}
+- **Size**: {stats["count"]} data points
+- **Range**: {stats["min"]:.2f} to {stats["max"]:.2f}
 
 ## Statistical Summary
-- **Mean**: {stats['mean']:.2f}
-- **Median**: {stats['median']:.2f}
+- **Mean**: {stats["mean"]:.2f}
+- **Median**: {stats["median"]:.2f}
 """
 
         if "stdev" in stats:
@@ -246,9 +242,9 @@ class DataAnalysisAgent(StreamingAgent):
 
         report += f"""
 ## Key Insights
-- The dataset shows a range of {stats['max'] - stats['min']:.2f}
-- The average value is {stats['mean']:.2f}
-- Half of the values are below {stats['median']:.2f}
+- The dataset shows a range of {stats["max"] - stats["min"]:.2f}
+- The average value is {stats["mean"]:.2f}
+- Half of the values are below {stats["median"]:.2f}
 
 Analysis completed successfully! See attached artifacts for detailed statistics and visualization data.
 """
@@ -277,7 +273,7 @@ if __name__ == "__main__":
     print("  - Custom provider information")
     print("  - Custom input/output format specification")
     print("\nExample request:")
-    print('  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]')
+    print("  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]")
     print("\nWould generate:")
     print("  - Statistical Summary (JSON)")
     print("  - Histogram Data (JSON)")
@@ -299,11 +295,11 @@ if __name__ == "__main__":
     print(f"Streaming: {card.capabilities.streaming}")
     print(f"Push Notifications: {card.capabilities.push_notifications}")
 
-    print(f"\nInput Formats:")
+    print("\nInput Formats:")
     for fmt in card.default_input_modes:
         print(f"  - {fmt}")
 
-    print(f"\nOutput Formats:")
+    print("\nOutput Formats:")
     for fmt in card.default_output_modes:
         print(f"  - {fmt}")
 

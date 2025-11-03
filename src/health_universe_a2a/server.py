@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 try:
     import uvicorn
@@ -19,7 +19,7 @@ from health_universe_a2a.base import A2AAgent
 logger = logging.getLogger(__name__)
 
 
-def create_app(agent: A2AAgent, task_store: Optional[Any] = None) -> Any:
+def create_app(agent: A2AAgent, task_store: Any | None = None) -> Any:
     """
     Create a Starlette ASGI application for an A2A agent.
 
@@ -75,20 +75,18 @@ def create_app(agent: A2AAgent, task_store: Optional[Any] = None) -> Any:
     request_handler = DefaultRequestHandler(agent_executor=agent, task_store=task_store)
 
     # Build Starlette app with A2A endpoints
-    app = A2AStarletteApplication(
-        agent_card=agent_card, http_handler=request_handler
-    ).build()
+    app = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler).build()
 
     return app
 
 
 def serve(
     agent: A2AAgent,
-    host: Optional[str] = None,
-    port: Optional[int] = None,
-    reload: Optional[bool] = None,
+    host: str | None = None,
+    port: int | None = None,
+    reload: bool | None = None,
     log_level: str = "info",
-    task_store: Optional[Any] = None,
+    task_store: Any | None = None,
 ) -> None:
     """
     Start an HTTP server for an A2A agent.
@@ -138,11 +136,7 @@ def serve(
     # Configuration from environment with overrides
     actual_host = host or os.getenv("HOST", "0.0.0.0")
     actual_port = port or int(os.getenv("PORT", os.getenv("AGENT_PORT", "8000")))
-    actual_reload = (
-        reload
-        if reload is not None
-        else os.getenv("RELOAD", "false").lower() == "true"
-    )
+    actual_reload = reload if reload is not None else os.getenv("RELOAD", "false").lower() == "true"
 
     # Create the app
     app = create_app(agent, task_store=task_store)
