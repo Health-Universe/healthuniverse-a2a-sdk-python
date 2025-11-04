@@ -4,11 +4,12 @@ import logging
 import os
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
+    AgentInterface,
     AgentProvider,
     AgentSkill,
     Message,
@@ -18,7 +19,7 @@ from a2a.types import (
 )
 
 from health_universe_a2a import AgentResponse
-from health_universe_a2a.context import MessageContext
+from health_universe_a2a.context import AsyncContext, MessageContext
 from health_universe_a2a.types.extensions import AgentExtension
 from health_universe_a2a.types.validation import (
     ValidationAccepted,
@@ -28,8 +29,11 @@ from health_universe_a2a.types.validation import (
 
 logger = logging.getLogger(__name__)
 
+# TypeVar for context, bound to MessageContext (which AsyncContext extends)
+ContextT = TypeVar("ContextT", bound=MessageContext)
 
-class A2AAgent(ABC):
+
+class A2AAgent(ABC, Generic[ContextT]):
     """
     Base class for all A2A agents.
 
@@ -88,7 +92,7 @@ class A2AAgent(ABC):
         pass
 
     @abstractmethod
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: ContextT) -> str:
         """
         Process an incoming message and return a response.
 
@@ -117,7 +121,7 @@ class A2AAgent(ABC):
     # Request handling with validation
 
     async def handle_request(
-        self, message: str, context: MessageContext, metadata: dict[str, Any]
+        self, message: str, context: ContextT, metadata: dict[str, Any]
     ) -> str | None:
         """
         Handle complete request flow: validation → processing.
@@ -152,7 +156,7 @@ class A2AAgent(ABC):
                 # Create rejection message
                 text_part = TextPart(text=f"Validation failed: {validation_result.reason}")
                 msg = Message(
-                    messageId=str(uuid.uuid4()),
+                    message_id=str(uuid.uuid4()),
                     role=Role.agent,
                     parts=[Part(root=text_part)],
                 )
@@ -316,14 +320,14 @@ class A2AAgent(ABC):
 
         return AgentCard(
             # Required fields per spec
-            protocolVersion="0.3.0",
+            protocol_version="0.3.0",
             name=self.get_agent_name(),
             description=self.get_agent_description(),
             version=self.get_agent_version(),
             url=base_url,
             # Transport configuration - using JSON-RPC
-            preferredTransport="JSONRPC",
-            additionalInterfaces=[{"url": base_url, "transport": "JSONRPC"}],
+            preferred_transport="JSONRPC",
+            additional_interfaces=[AgentInterface(url=base_url, transport="JSONRPC")],
             # Provider information
             provider=AgentProvider(
                 organization=self.get_provider_organization(), url=self.get_provider_url()
@@ -332,16 +336,16 @@ class A2AAgent(ABC):
             capabilities=AgentCapabilities(
                 streaming=self.supports_streaming(),
                 push_notifications=self.supports_push_notifications(),
-                extensions=self.get_extensions(),
+                extensions=self.get_extensions(),  # type: ignore[arg-type]
             ),
             # Skills (optional but recommended)
             skills=self.get_agent_skills(),
             # Security (can be extended in subclasses)
-            securitySchemes=self.get_security_schemes(),
+            security_schemes=self.get_security_schemes(),
             security=self.get_security_requirements(),
             # Input/output modes
-            defaultInputModes=self.get_supported_input_formats(),
-            defaultOutputModes=self.get_supported_output_formats(),
+            default_input_modes=self.get_supported_input_formats(),
+            default_output_modes=self.get_supported_output_formats(),
         )
 
     def get_base_url(self) -> str:
@@ -535,7 +539,7 @@ class A2AAgent(ABC):
         self,
         agent_identifier: str,
         message: str,
-        context: MessageContext,
+        context: ContextT,
         timeout: float = 30.0,
     ) -> AgentResponse:
         """
@@ -587,7 +591,7 @@ class A2AAgent(ABC):
         self,
         agent_identifier: str,
         data: Any,
-        context: MessageContext,
+        context: ContextT,
         timeout: float = 30.0,
     ) -> "AgentResponse":
         """
@@ -711,7 +715,7 @@ class A2AAgent(ABC):
         """
         pass
 
-    async def on_task_start(self, message: str, context: MessageContext) -> None:  # noqa: B027
+    async def on_task_start(self, message: str, context: ContextT) -> None:  # noqa: B027
         """
         Called after validation passes, before process_message.
 
@@ -728,7 +732,9 @@ class A2AAgent(ABC):
         """
         pass
 
-    async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:  # noqa: B027
+    async def on_task_complete(
+        self, message: str, result: str, context: ContextT
+    ) -> None:  # noqa: B027
         """
         Called after process_message completes successfully.
 
@@ -749,7 +755,7 @@ class A2AAgent(ABC):
         pass
 
     async def on_task_error(
-        self, message: str, error: Exception, context: MessageContext
+        self, message: str, error: Exception, context: ContextT
     ) -> str | None:
         """
         Called when process_message raises an exception.

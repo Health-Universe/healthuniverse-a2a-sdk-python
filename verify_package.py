@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 
-def verify_structure():
+def verify_structure() -> bool:
     """Verify directory structure."""
     print("Verifying package structure...")
 
@@ -47,7 +47,7 @@ def verify_structure():
     return True
 
 
-def verify_imports():
+def verify_imports() -> bool:
     """Verify package imports."""
     print("\nVerifying imports...")
 
@@ -86,7 +86,7 @@ def verify_imports():
         return False
 
 
-def main():
+def main() -> None:
     """Run all verifications."""
     print("=" * 60)
     print("Health Universe A2A SDK - Package Verification")

@@ -10,7 +10,7 @@ from health_universe_a2a.types.extensions import FILE_ACCESS_EXTENSION_URI, Agen
 logger = logging.getLogger(__name__)
 
 
-class StreamingAgent(A2AAgent):
+class StreamingAgent(A2AAgent[MessageContext]):
     """
     Agent for short-running tasks (< 5 min) with SSE streaming updates.
 

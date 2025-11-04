@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from typing import Any
 
 import httpx
@@ -83,7 +84,7 @@ class AgentResponse:
         return None
 
     @property
-    def parts(self) -> list[dict]:
+    def parts(self) -> list[dict[str, Any]]:
         """
         Get all parts from response.
 
@@ -96,7 +97,8 @@ class AgentResponse:
         if isinstance(self.raw_response, dict) and "message" in self.raw_response:
             msg = self.raw_response["message"]
             if isinstance(msg, dict) and "parts" in msg:
-                return msg["parts"]
+                parts: list[dict[str, Any]] = msg["parts"]
+                return parts
         return []
 
     def __str__(self) -> str:
@@ -164,9 +166,8 @@ class InterAgentClient:
         """
         self.agent_identifier = agent_identifier
         self.auth_token = auth_token
-        self.local_base_url = (
-            local_base_url or os.getenv("LOCAL_AGENT_BASE_URL", "http://localhost:8501")
-        ).rstrip("/")
+        base_url = local_base_url or os.getenv("LOCAL_AGENT_BASE_URL", "http://localhost:8501")
+        self.local_base_url = (base_url or "http://localhost:8501").rstrip("/")
         self.agent_registry = agent_registry or self._load_agent_registry()
         self.timeout = timeout
         self.max_retries = max_retries
@@ -255,7 +256,7 @@ class InterAgentClient:
 
         return False
 
-    async def _call_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
+    async def _call_with_retry(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """
         Make HTTP call with retry logic.
 
@@ -325,7 +326,9 @@ class InterAgentClient:
         """
         # Build A2A message
         text_part = TextPart(text=message)
-        a2a_message = Message(role=Role.user, parts=[Part(root=text_part)])
+        a2a_message = Message(
+            message_id=str(uuid.uuid4()), role=Role.user, parts=[Part(root=text_part)]
+        )
 
         # Build request
         headers = {"Content-Type": "application/json"}
@@ -369,7 +372,9 @@ class InterAgentClient:
         """
         # Build A2A message with DataPart
         data_part = DataPart(data=data)
-        a2a_message = Message(role=Role.user, parts=[Part(root=data_part)])
+        a2a_message = Message(
+            message_id=str(uuid.uuid4()), role=Role.user, parts=[Part(root=data_part)]
+        )
 
         # Build request
         headers = {"Content-Type": "application/json"}
@@ -391,7 +396,7 @@ class InterAgentClient:
         result = response.json()
         return AgentResponse(result)
 
-    async def close(self):
+    async def close(self) -> None:
         """
         Close the client.
 

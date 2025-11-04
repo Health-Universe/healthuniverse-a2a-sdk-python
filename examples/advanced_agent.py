@@ -27,7 +27,7 @@ from health_universe_a2a import (
 class DataProcessorAgent(A2AAgent):
     """An agent that processes data with validation and progress tracking."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.processed_count = 0
 
@@ -104,7 +104,7 @@ class DataProcessorAgent(A2AAgent):
 
         # Add as artifact
         await context.add_artifact(
-            "analysis.json", json.dumps(analysis, indent=2), content_type="application/json"
+            "analysis.json", json.dumps(analysis, indent=2), data_type="application/json"
         )
 
         await asyncio.sleep(0.5)

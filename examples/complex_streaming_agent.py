@@ -290,7 +290,8 @@ if __name__ == "__main__":
     print(f"\nName: {card.name}")
     print(f"Version: {card.version}")
     print(f"Description: {card.description}")
-    print(f"Provider: {card.provider.organization} ({card.provider.url})")
+    if card.provider:
+        print(f"Provider: {card.provider.organization} ({card.provider.url})")
     print(f"Protocol Version: {card.protocol_version}")
     print(f"Streaming: {card.capabilities.streaming}")
     print(f"Push Notifications: {card.capabilities.push_notifications}")

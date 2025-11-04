@@ -190,9 +190,9 @@ class OrchestratorAgent(StreamingAgent):
 
         # Wait for all with error handling
         completed_results = []
-        for i, task in enumerate(asyncio.as_completed(tasks)):
+        for i, future in enumerate(asyncio.as_completed(tasks)):
             try:
-                result = await task
+                result = await future
                 completed_results.append(result.text)
                 await context.update_progress(
                     f"Completed {i + 1}/{len(processors)} processors",

@@ -23,17 +23,21 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Install uv
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
 
     - name: Install dependencies
-      run: |
-        uv pip install --system -e ".[dev,server]"
+      run: uv pip install -e ".[dev,server]"
 
     - name: Run tests with coverage
-      run: |
-        pytest
+      run: uv run pytest
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      if: matrix.python-version == '3.10'
+      with:
+        fail_ci_if_error: false
 
   lint:
     runs-on: ubuntu-latest
@@ -46,21 +50,18 @@ jobs:
         python-version: "3.10"
 
     - name: Install uv
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
 
     - name: Install dependencies
-      run: |
-        uv pip install --system -e ".[dev]"
+      run: uv pip install -e ".[dev]"
 
     - name: Run ruff check
-      run: |
-        ruff check src/
+      run: uv run ruff check src/
 
     - name: Run ruff format check
-      run: |
-        ruff format --check src/
+      run: uv run ruff format --check src/
 
   typecheck:
     runs-on: ubuntu-latest
@@ -73,14 +74,12 @@ jobs:
         python-version: "3.10"
 
     - name: Install uv
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
 
     - name: Install dependencies
-      run: |
-        uv pip install --system -e ".[dev]"
+      run: uv pip install -e ".[dev]"
 
     - name: Run mypy
-      run: |
-        mypy src/
+      run: uv run mypy src/

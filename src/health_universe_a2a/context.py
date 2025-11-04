@@ -1,6 +1,7 @@
 """Context objects passed to agent process_message methods"""
 
 import os
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from a2a.types import Message, Part, Role, TaskState, TextPart
@@ -65,6 +66,7 @@ class MessageContext(BaseModel):
             # Create A2A Message object
             text_part = TextPart(text=message)
             msg = Message(
+                message_id=str(uuid.uuid4()),
                 role=Role.agent,
                 parts=[Part(root=text_part)],
                 metadata=metadata if metadata else None,
@@ -278,7 +280,7 @@ class AsyncContext(MessageContext):
             )
         """
         if self._update_client:
-            artifact_data = {
+            artifact_data: dict[str, Any] = {
                 "name": name,
                 "content": content,
                 "data_type": data_type,

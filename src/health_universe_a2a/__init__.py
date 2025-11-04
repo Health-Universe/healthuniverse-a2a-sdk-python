@@ -5,6 +5,8 @@ A simple, batteries-included SDK for building A2A-compliant agents.
 """
 
 # Core agent classes
+from typing import Any
+
 from health_universe_a2a.async_agent import AsyncAgent
 from health_universe_a2a.base import A2AAgent
 
@@ -33,13 +35,20 @@ try:
 except ImportError:
     _SERVER_AVAILABLE = False
 
-    def create_app(*args, **kwargs):
+    def create_app(agent: "A2AAgent", task_store: Any | None = None) -> Any:
         raise ImportError(
             "Server dependencies not installed. "
             'Install with: pip install "health-universe-a2a[server]"'
         )
 
-    def serve(*args, **kwargs):
+    def serve(
+        agent: "A2AAgent",
+        host: str | None = None,
+        port: int | None = None,
+        reload: bool | None = None,
+        log_level: str = "info",
+        task_store: Any | None = None,
+    ) -> None:
         raise ImportError(
             "Server dependencies not installed. "
             'Install with: pip install "health-universe-a2a[server]"'

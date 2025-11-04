@@ -10,9 +10,10 @@ from health_universe_a2a import (
     ValidationAccepted,
     ValidationRejected,
 )
+from health_universe_a2a.types.validation import ValidationResult
 
 
-class TestAgent(A2AAgent):
+class TestAgent(A2AAgent[MessageContext]):
     """Simple test agent for testing base functionality."""
 
     def get_agent_name(self) -> str:
@@ -89,7 +90,7 @@ class TestA2AAgent:
         assert error_msg is None  # Default returns None
 
 
-class TestAgentWithCustomValidation(A2AAgent):
+class TestAgentWithCustomValidation(A2AAgent[MessageContext]):
     """Test agent with custom validation."""
 
     def get_agent_name(self) -> str:
@@ -98,7 +99,7 @@ class TestAgentWithCustomValidation(A2AAgent):
     def get_agent_description(self) -> str:
         return "Tests custom validation"
 
-    async def validate_message(self, message: str, metadata: dict):
+    async def validate_message(self, message: str, metadata: dict) -> ValidationResult:
         if len(message) < 5:
             return ValidationRejected(reason="Message too short (min 5 chars)")
 
@@ -130,7 +131,7 @@ class TestCustomValidation:
         assert result.estimated_duration_seconds == 10
 
 
-class TestAgentWithFileAccess(A2AAgent):
+class TestAgentWithFileAccess(A2AAgent[MessageContext]):
     """Test agent that requires file access."""
 
     def get_agent_name(self) -> str:
@@ -156,7 +157,7 @@ class TestFileAccessConfiguration:
 
 
 # Test agent with lifecycle hooks for testing
-class TestAgentWithHooks(A2AAgent):
+class TestAgentWithHooks(A2AAgent[MessageContext]):
     """Test agent that tracks lifecycle hook calls."""
 
     def __init__(self) -> None:
@@ -186,7 +187,7 @@ class TestAgentWithHooks(A2AAgent):
         return f"Custom error: {str(error)}"
 
 
-class TestAgentThatErrors(A2AAgent):
+class TestAgentThatErrors(A2AAgent[MessageContext]):
     """Test agent that raises an error during processing."""
 
     def get_agent_name(self) -> str:
@@ -282,11 +283,11 @@ class TestHandleRequestFlow:
         # Make process_message raise an error
         _ = agent.process_message
 
-        async def error_process(msg: str, ctx: MessageContext) -> str:
+        async def error_process(message: str, context: MessageContext) -> str:
             agent.hook_calls.append("process_message")
             raise RuntimeError("Test error")
 
-        agent.process_message = error_process
+        agent.process_message = error_process # type: ignore
 
         # Should raise the error
         with pytest.raises(RuntimeError, match="Test error"):
@@ -310,7 +311,7 @@ class TestHandleRequestFlow:
         context._updater = AsyncMock()
 
         # Make process_message raise an error
-        async def error_process(msg: str, ctx: MessageContext) -> str:
+        async def error_process(message: str, context: MessageContext) -> str:
             agent.hook_calls.append("process_message")
             raise ValueError("Internal error")
 
@@ -326,7 +327,7 @@ class TestHandleRequestFlow:
         assert call_args.kwargs["message"] == "Custom error: Internal error"
 
 
-class TestAgentWithCustomConfig(A2AAgent):
+class TestAgentWithCustomConfig(A2AAgent[MessageContext]):
     """Test agent with custom configuration."""
 
     def get_agent_name(self) -> str:
@@ -383,6 +384,7 @@ class TestAgentCardCreation:
         agent = TestAgentWithCustomConfig()
         card = agent.create_agent_card()
 
+        assert card.provider is not None
         assert card.provider.organization == "Test Organization"
         assert card.provider.url == "https://test.example.com"
 
@@ -420,6 +422,7 @@ class TestAgentCardCreation:
 
         # Should have a URL (from environment or default)
         assert card.url is not None
+        assert card.additional_interfaces is not None
         assert len(card.additional_interfaces) > 0
         assert card.additional_interfaces[0].transport == "JSONRPC"
 

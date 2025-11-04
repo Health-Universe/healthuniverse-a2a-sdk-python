@@ -2,6 +2,7 @@
 
 import logging
 import os
+import uuid
 from typing import Any
 
 from a2a.types import Message, Part, Role, TextPart
@@ -22,7 +23,7 @@ from health_universe_a2a.update_client import BackgroundUpdateClient
 logger = logging.getLogger(__name__)
 
 
-class AsyncAgent(A2AAgent):
+class AsyncAgent(A2AAgent[AsyncContext]):
     """
     Agent for long-running tasks (hours) with async job processing.
 
@@ -164,7 +165,9 @@ class AsyncAgent(A2AAgent):
             self.logger.warning(f"Message validation failed: {validation_result.reason}")
             if context._updater:
                 text_part = TextPart(text=f"Validation failed: {validation_result.reason}")
-                msg = Message(role=Role.agent, parts=[Part(root=text_part)])
+                msg = Message(
+                    message_id=str(uuid.uuid4()), role=Role.agent, parts=[Part(root=text_part)]
+                )
                 await context._updater.reject(message=msg)
             return None
 
@@ -193,6 +196,7 @@ class AsyncAgent(A2AAgent):
 
                 text_part = TextPart(text=ack_message)
                 msg = Message(
+                    message_id=str(uuid.uuid4()),
                     role=Role.agent,
                     parts=[Part(root=text_part)],
                     metadata=ack_metadata if ack_metadata else None,
