@@ -10,8 +10,9 @@ A file processing agent that demonstrates:
 
 import asyncio
 import json
+from typing import Any
 
-from health_universe_a2a import AsyncAgent, AsyncContext
+from health_universe_a2a import AsyncAgent, BackgroundContext
 
 
 class FileProcessorAgent(AsyncAgent):
@@ -35,7 +36,7 @@ class FileProcessorAgent(AsyncAgent):
         """Allow up to 10 minutes for processing."""
         return 600
 
-    async def process_message(self, message: str, context: AsyncContext) -> str:
+    async def process_message(self, message: str, context: BackgroundContext) -> str:
         """
         Process a CSV file.
 
@@ -70,7 +71,7 @@ class FileProcessorAgent(AsyncAgent):
         await asyncio.sleep(1)
 
         # Create summary artifact
-        summary = {
+        summary: dict[str, Any] = {
             "file_uri": file_uri,
             "rows": row_count,
             "columns": column_count,

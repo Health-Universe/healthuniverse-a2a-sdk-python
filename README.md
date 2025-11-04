@@ -39,7 +39,7 @@ uv pip install health-universe-a2a[dev]
 ### Simple Realtime Agent
 
 ```python
-from health_universe_a2a import StreamingAgent, MessageContext
+from health_universe_a2a import StreamingAgent, StreamingContext
 
 class CalculatorAgent(StreamingAgent):
     def get_agent_name(self) -> str:
@@ -48,7 +48,7 @@ class CalculatorAgent(StreamingAgent):
     def get_agent_description(self) -> str:
         return "Performs basic calculations"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         await context.update_progress("Calculating...", 0.5)
 
         # Parse and calculate
@@ -60,7 +60,7 @@ class CalculatorAgent(StreamingAgent):
 ### Simple Background Agent
 
 ```python
-from health_universe_a2a import AsyncAgent, AsyncContext
+from health_universe_a2a import AsyncAgent, BackgroundContext
 
 class FileProcessorAgent(AsyncAgent):
     def get_agent_name(self) -> str:
@@ -72,7 +72,7 @@ class FileProcessorAgent(AsyncAgent):
     def requires_file_access(self) -> bool:
         return True  # Auto-enables file access extension
 
-    async def process_message(self, message: str, context: AsyncContext) -> str:
+    async def process_message(self, message: str, context: BackgroundContext) -> str:
         await context.update_progress("Loading file...", 0.2)
 
         # Process file using context.file_access_token
@@ -158,10 +158,13 @@ Is the task duration > 5 minutes?
 
 ### Message Context
 
-Both agent types receive a `MessageContext` (or `AsyncContext`) with helper methods:
+Both agent types receive a context object with helper methods:
+- **StreamingAgent** receives `StreamingContext` (for SSE updates)
+- **AsyncAgent** receives `BackgroundContext` (for POST updates)
 
 ```python
-async def process_message(self, message: str, context: MessageContext) -> str:
+# For StreamingAgent
+async def process_message(self, message: str, context: StreamingContext) -> str:
     # Send progress updates
     await context.update_progress("Working...", 0.5)
 
@@ -223,15 +226,17 @@ async def on_shutdown(self) -> None:
     """Called when agent shuts down"""
     await self.model.unload()
 
-async def on_task_start(self, message: str, context: MessageContext) -> None:
+# For StreamingAgent, context is StreamingContext
+# For AsyncAgent, context is BackgroundContext
+async def on_task_start(self, message: str, context) -> None:
     """Called before processing"""
     self.logger.info(f"Starting task for {context.user_id}")
 
-async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:
+async def on_task_complete(self, message: str, result: str, context) -> None:
     """Called after successful processing"""
     await self.metrics.increment("tasks_completed")
 
-async def on_task_error(self, message: str, error: Exception, context: MessageContext) -> str | None:
+async def on_task_error(self, message: str, error: Exception, context) -> str | None:
     """Called on error - return custom error message or None for default"""
     if isinstance(error, TimeoutError):
         return "Task timed out. Try a smaller request."
@@ -318,7 +323,7 @@ class DataProcessorAgent(StreamingAgent):
             ),
         ]
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         # Your implementation can route based on message content
         # or handle all skills in one unified flow
         return "Processing complete"
@@ -354,7 +359,7 @@ See the `examples/` directory for complete working examples:
 If you need extensions beyond file access and background jobs:
 
 ```python
-from health_universe_a2a.types import AgentExtension
+from health_universe_a2a import AgentExtension
 
 def get_extensions(self) -> list[AgentExtension]:
     extensions = super().get_extensions()  # Get auto-configured extensions
@@ -362,7 +367,8 @@ def get_extensions(self) -> list[AgentExtension]:
     # Add custom extension
     extensions.append(AgentExtension(
         uri="https://example.com/custom-extension/v1",
-        metadata={"some": "config"}
+        params={"some": "config"},
+        required=False
     ))
 
     return extensions
@@ -373,7 +379,9 @@ def get_extensions(self) -> list[AgentExtension]:
 Control error messages returned to users:
 
 ```python
-async def on_task_error(self, message: str, error: Exception, context: MessageContext) -> str | None:
+# For StreamingAgent, context is StreamingContext
+# For AsyncAgent, context is BackgroundContext
+async def on_task_error(self, message: str, error: Exception, context: StreamingContext) -> str | None:
     # Log error
     self.logger.error(f"Task failed: {error}", exc_info=True)
 
@@ -394,7 +402,9 @@ async def on_task_error(self, message: str, error: Exception, context: MessageCo
 Check for cancellation during long-running operations:
 
 ```python
-async def process_message(self, message: str, context: MessageContext) -> str:
+# For StreamingAgent, context is StreamingContext
+# For AsyncAgent, context is BackgroundContext
+async def process_message(self, message: str, context: StreamingContext) -> str:
     items = parse_items(message)
 
     for i, item in enumerate(items):
@@ -413,10 +423,10 @@ async def process_message(self, message: str, context: MessageContext) -> str:
 Call other A2A-compliant agents from your agent's processing logic:
 
 ```python
-from health_universe_a2a import StreamingAgent, MessageContext
+from health_universe_a2a import StreamingAgent, StreamingContext
 
 class OrchestratorAgent(StreamingAgent):
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         # Call local agent (bypasses ingress/egress)
         preprocessor_response = await self.call_other_agent(
             "/preprocessor",  # Local agent path
@@ -547,16 +557,16 @@ uv run ruff format src/
 The SDK includes a built-in HTTP server for running your agents:
 
 ```python
-from health_universe_a2a import A2AAgent, MessageContext
+from health_universe_a2a import StreamingAgent, StreamingContext
 
-class MyAgent(A2AAgent):
+class MyAgent(StreamingAgent):
     def get_agent_name(self) -> str:
         return "My Agent"
 
     def get_agent_description(self) -> str:
         return "Does something useful"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         return f"Processed: {message}"
 
 if __name__ == "__main__":

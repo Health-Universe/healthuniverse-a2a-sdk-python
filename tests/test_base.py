@@ -1,19 +1,38 @@
 """Tests for base A2AAgent class"""
 
-from unittest.mock import AsyncMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from health_universe_a2a import (
-    A2AAgent,
-    MessageContext,
+    StreamingAgent,
+    StreamingContext,
     ValidationAccepted,
     ValidationRejected,
 )
 from health_universe_a2a.types.validation import ValidationResult
 
 
-class TestAgent(A2AAgent[MessageContext]):
+# Helper function to create a test context with mocks
+def create_test_context() -> StreamingContext:
+    """Create a StreamingContext with mock updater and request_context for testing."""
+    updater = MagicMock()
+    updater.update_status = AsyncMock()
+    updater.reject = AsyncMock()
+    updater.add_artifact = AsyncMock()
+    updater.complete = AsyncMock()
+
+    request_context = MagicMock()
+
+    # Use model_construct to bypass Pydantic validation for tests
+    return StreamingContext.model_construct(
+        updater=updater,
+        request_context=request_context,
+    )
+
+
+class TestAgent(StreamingAgent):
     """Simple test agent for testing base functionality."""
 
     def get_agent_name(self) -> str:
@@ -22,12 +41,12 @@ class TestAgent(A2AAgent[MessageContext]):
     def get_agent_description(self) -> str:
         return "An agent for testing"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         return f"Processed: {message}"
 
 
-class TestA2AAgent:
-    """Tests for A2AAgent base class."""
+class TestA2AAgentBase:
+    """Tests for A2AAgentBase (via StreamingAgent)."""
 
     def test_agent_initialization(self) -> None:
         """Agent should initialize without errors."""
@@ -69,7 +88,7 @@ class TestA2AAgent:
     async def test_process_message(self) -> None:
         """Agent should process messages correctly."""
         agent = TestAgent()
-        context = MessageContext()
+        context = create_test_context()
         result = await agent.process_message("hello", context)
 
         assert result == "Processed: hello"
@@ -78,7 +97,7 @@ class TestA2AAgent:
     async def test_lifecycle_hooks_are_optional(self) -> None:
         """Lifecycle hooks should be no-ops by default."""
         agent = TestAgent()
-        context = MessageContext()
+        context = create_test_context()
 
         # Should not raise any errors
         await agent.on_startup()
@@ -90,7 +109,7 @@ class TestA2AAgent:
         assert error_msg is None  # Default returns None
 
 
-class TestAgentWithCustomValidation(A2AAgent[MessageContext]):
+class TestAgentWithCustomValidation(StreamingAgent):
     """Test agent with custom validation."""
 
     def get_agent_name(self) -> str:
@@ -99,13 +118,13 @@ class TestAgentWithCustomValidation(A2AAgent[MessageContext]):
     def get_agent_description(self) -> str:
         return "Tests custom validation"
 
-    async def validate_message(self, message: str, metadata: dict) -> ValidationResult:
+    async def validate_message(self, message: str, metadata: dict[str, Any]) -> ValidationResult:
         if len(message) < 5:
             return ValidationRejected(reason="Message too short (min 5 chars)")
 
         return ValidationAccepted(estimated_duration_seconds=10)
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         return "processed"
 
 
@@ -131,7 +150,7 @@ class TestCustomValidation:
         assert result.estimated_duration_seconds == 10
 
 
-class TestAgentWithFileAccess(A2AAgent[MessageContext]):
+class TestAgentWithFileAccess(StreamingAgent):
     """Test agent that requires file access."""
 
     def get_agent_name(self) -> str:
@@ -143,7 +162,7 @@ class TestAgentWithFileAccess(A2AAgent[MessageContext]):
     def requires_file_access(self) -> bool:
         return True
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         return "processed"
 
 
@@ -157,7 +176,7 @@ class TestFileAccessConfiguration:
 
 
 # Test agent with lifecycle hooks for testing
-class TestAgentWithHooks(A2AAgent[MessageContext]):
+class TestAgentWithHooks(StreamingAgent):
     """Test agent that tracks lifecycle hook calls."""
 
     def __init__(self) -> None:
@@ -170,24 +189,24 @@ class TestAgentWithHooks(A2AAgent[MessageContext]):
     def get_agent_description(self) -> str:
         return "Tests lifecycle hooks"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         self.hook_calls.append("process_message")
         return f"Processed: {message}"
 
-    async def on_task_start(self, message: str, context: MessageContext) -> None:
+    async def on_task_start(self, message: str, context: StreamingContext) -> None:
         self.hook_calls.append("on_task_start")
 
-    async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:
+    async def on_task_complete(self, message: str, result: str, context: StreamingContext) -> None:
         self.hook_calls.append("on_task_complete")
 
     async def on_task_error(
-        self, message: str, error: Exception, context: MessageContext
+        self, message: str, error: Exception, context: StreamingContext
     ) -> str | None:
         self.hook_calls.append("on_task_error")
         return f"Custom error: {str(error)}"
 
 
-class TestAgentThatErrors(A2AAgent[MessageContext]):
+class TestAgentThatErrors(StreamingAgent):
     """Test agent that raises an error during processing."""
 
     def get_agent_name(self) -> str:
@@ -196,7 +215,7 @@ class TestAgentThatErrors(A2AAgent[MessageContext]):
     def get_agent_description(self) -> str:
         return "Always errors"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         raise ValueError("Processing failed!")
 
 
@@ -207,11 +226,11 @@ class TestHandleRequestFlow:
     async def test_handle_request_with_rejection(self) -> None:
         """handle_request should handle validation rejection properly."""
         agent = TestAgentWithCustomValidation()
-        context = MessageContext()
+        context = create_test_context()
 
         # Mock the updater - return immediately to avoid Message creation
         mock_updater = AsyncMock()
-        context._updater = mock_updater
+        context.updater = mock_updater
 
         # Short message should be rejected
         result = await agent.handle_request("hi", context, {})
@@ -226,8 +245,8 @@ class TestHandleRequestFlow:
     async def test_handle_request_with_acceptance(self) -> None:
         """handle_request should process accepted messages."""
         agent = TestAgentWithCustomValidation()
-        context = MessageContext()
-        context._updater = AsyncMock()
+        context = create_test_context()
+        context.updater = AsyncMock()
 
         # Long message should be accepted and processed
         result = await agent.handle_request("hello world", context, {})
@@ -236,13 +255,13 @@ class TestHandleRequestFlow:
         assert result == "processed"
 
         # Should NOT have called reject
-        context._updater.reject.assert_not_called()
+        context.updater.reject.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_request_calls_lifecycle_hooks_in_order(self) -> None:
         """handle_request should call lifecycle hooks in correct order."""
         agent = TestAgentWithHooks()
-        context = MessageContext()
+        context = create_test_context()
 
         result = await agent.handle_request("test message", context, {})
 
@@ -260,30 +279,39 @@ class TestHandleRequestFlow:
     async def test_handle_request_with_processing_error(self) -> None:
         """handle_request should handle processing errors."""
         agent = TestAgentThatErrors()
-        context = MessageContext()
-        context._updater = AsyncMock()
+        context = create_test_context()
 
-        # Should raise the error
-        with pytest.raises(ValueError, match="Processing failed!"):
-            await agent.handle_request("test", context, {})
+        # Patch the update_progress method at the class level
+        with patch(
+            "health_universe_a2a.context.StreamingContext.update_progress", new=AsyncMock()
+        ) as mock_update:
+            # Should raise the error
+            with pytest.raises(ValueError, match="Processing failed!"):
+                await agent.handle_request("test", context, {})
 
-        # Should have sent error update
-        context._updater.update_progress.assert_called_once()
-        call_args = context._updater.update_progress.call_args
-        assert "Processing failed!" in call_args.kwargs["message"]
-        assert call_args.kwargs["status"] == "error"
+            # Should have sent error update
+            mock_update.assert_called_once()
+            call_args = mock_update.call_args
+            # Check first positional argument (message) and keyword argument (status)
+            message = (
+                call_args.args[0] if len(call_args.args) > 0 else call_args.kwargs.get("message")
+            )
+            status = call_args.kwargs.get("status")
+            assert message is not None
+            assert "Processing failed!" in message
+            assert status == "error"
 
     @pytest.mark.asyncio
     async def test_handle_request_calls_error_hook(self) -> None:
         """handle_request should call on_task_error when processing fails."""
         agent = TestAgentWithHooks()
-        context = MessageContext()
-        context._updater = AsyncMock()
+        context = create_test_context()
+        context.updater = AsyncMock()
 
         # Make process_message raise an error
         _ = agent.process_message
 
-        async def error_process(message: str, context: MessageContext) -> str:
+        async def error_process(message: str, context: StreamingContext) -> str:
             agent.hook_calls.append("process_message")
             raise RuntimeError("Test error")
 
@@ -307,27 +335,34 @@ class TestHandleRequestFlow:
     async def test_handle_request_uses_custom_error_message(self) -> None:
         """handle_request should use custom error message from on_task_error."""
         agent = TestAgentWithHooks()
-        context = MessageContext()
-        context._updater = AsyncMock()
+        context = create_test_context()
 
         # Make process_message raise an error
-        async def error_process(message: str, context: MessageContext) -> str:
+        async def error_process(message: str, context: StreamingContext) -> str:
             agent.hook_calls.append("process_message")
             raise ValueError("Internal error")
 
         agent.process_message = error_process  # type: ignore[method-assign]
 
-        # Should raise the error
-        with pytest.raises(ValueError):
-            await agent.handle_request("test", context, {})
+        # Patch the update_progress method at the class level
+        with patch(
+            "health_universe_a2a.context.StreamingContext.update_progress", new=AsyncMock()
+        ) as mock_update:
+            # Should raise the error
+            with pytest.raises(ValueError):
+                await agent.handle_request("test", context, {})
 
-        # Should have sent custom error message
-        context._updater.update_progress.assert_called_once()
-        call_args = context._updater.update_progress.call_args
-        assert call_args.kwargs["message"] == "Custom error: Internal error"
+            # Should have sent custom error message
+            mock_update.assert_called_once()
+            call_args = mock_update.call_args
+            # Check first positional argument (message)
+            message = (
+                call_args.args[0] if len(call_args.args) > 0 else call_args.kwargs.get("message")
+            )
+            assert message == "Custom error: Internal error"
 
 
-class TestAgentWithCustomConfig(A2AAgent[MessageContext]):
+class TestAgentWithCustomConfig(StreamingAgent):
     """Test agent with custom configuration."""
 
     def get_agent_name(self) -> str:
@@ -354,7 +389,7 @@ class TestAgentWithCustomConfig(A2AAgent[MessageContext]):
     def requires_file_access(self) -> bool:
         return True
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         return "processed"
 
 
@@ -412,7 +447,8 @@ class TestAgentCardCreation:
         card = agent.create_agent_card()
 
         assert card.capabilities is not None
-        assert card.capabilities.streaming is False
+        # TestAgent inherits from StreamingAgent, so streaming is True
+        assert card.capabilities.streaming is True
         assert card.capabilities.push_notifications is False
 
     def test_agent_card_url_configuration(self) -> None:
@@ -434,14 +470,14 @@ class TestContextIntegration:
     async def test_process_message_can_use_context(self) -> None:
         """Agent should be able to use context during processing."""
 
-        class ContextUsingAgent(A2AAgent):
+        class ContextUsingAgent(StreamingAgent):
             def get_agent_name(self) -> str:
                 return "Context Agent"
 
             def get_agent_description(self) -> str:
                 return "Uses context"
 
-            async def process_message(self, message: str, context: MessageContext) -> str:
+            async def process_message(self, message: str, context: StreamingContext) -> str:
                 # Verify context is passed and accessible
                 assert context is not None
                 # Test accessing context attributes
@@ -450,7 +486,7 @@ class TestContextIntegration:
                 return "Done!"
 
         agent = ContextUsingAgent()
-        context = MessageContext()
+        context = create_test_context()
 
         result = await agent.handle_request("test", context, {})
 

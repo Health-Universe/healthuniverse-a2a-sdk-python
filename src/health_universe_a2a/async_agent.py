@@ -4,16 +4,16 @@ import asyncio
 import logging
 import os
 import uuid
+from abc import abstractmethod
 from typing import Any
 
-from a2a.types import Message, Part, Role, TaskState, TextPart
+from a2a.types import AgentExtension, Message, Part, Role, TaskState, TextPart
 
-from health_universe_a2a.base import A2AAgent
-from health_universe_a2a.context import AsyncContext, MessageContext
+from health_universe_a2a.base import A2AAgentBase
+from health_universe_a2a.context import BackgroundContext, StreamingContext
 from health_universe_a2a.types.extensions import (
     BACKGROUND_JOB_EXTENSION_URI,
     FILE_ACCESS_EXTENSION_URI,
-    AgentExtension,
 )
 from health_universe_a2a.types.validation import (
     ValidationAccepted,
@@ -24,7 +24,7 @@ from health_universe_a2a.update_client import BackgroundUpdateClient
 logger = logging.getLogger(__name__)
 
 
-class AsyncAgent(A2AAgent[AsyncContext]):
+class AsyncAgent(A2AAgentBase):
     """
     Agent for long-running tasks (hours) with async job processing.
 
@@ -53,7 +53,7 @@ class AsyncAgent(A2AAgent[AsyncContext]):
     - Handles job lifecycle (validation, enqueueing, async processing)
 
     Example:
-        from health_universe_a2a import AsyncAgent, AsyncContext
+        from health_universe_a2a import AsyncAgent, BackgroundContext
         import json
 
         class HeavyProcessorAgent(AsyncAgent):
@@ -75,7 +75,7 @@ class AsyncAgent(A2AAgent[AsyncContext]):
                 return ValidationAccepted(estimated_duration_seconds=3600)
 
             async def process_message(
-                self, message: str, context: AsyncContext
+                self, message: str, context: BackgroundContext
             ) -> str:
                 await context.update_progress("Loading file...", 0.1)
                 data = await self.load_file(context.file_access_token)
@@ -149,7 +149,7 @@ class AsyncAgent(A2AAgent[AsyncContext]):
         For cancellation support, check context.is_cancelled() periodically:
 
         Example:
-            async def process_message(self, message: str, context: AsyncContext) -> str:
+            async def process_message(self, message: str, context: BackgroundContext) -> str:
                 batches = self.split_data(message, batch_size=100)
 
                 for i, batch in enumerate(batches):
@@ -207,45 +207,145 @@ class AsyncAgent(A2AAgent[AsyncContext]):
         """
         return 3600
 
+    @abstractmethod
+    async def process_message(self, message: str, context: BackgroundContext) -> str:
+        """
+        Process a message with background context.
+
+        This method is called in the background after validation passes and
+        the SSE connection closes. All updates are sent via POST to the backend.
+
+        Args:
+            message: The message to process
+            context: BackgroundContext with update_client for POSTing updates
+
+        Returns:
+            Final result message
+
+        Example:
+            async def process_message(self, message: str, context: BackgroundContext) -> str:
+                await context.update_progress("Starting...", 0.1)
+                result = await self.do_work(message)
+                await context.add_artifact("Results", json.dumps(result), "application/json")
+                return "Processing complete!"
+        """
+        pass
+
+    async def on_task_start(self, message: str, context: BackgroundContext) -> None:  # noqa: B027
+        """
+        Called before process_message starts in the background.
+
+        This is called AFTER the SSE connection has closed, during the background
+        processing phase.
+
+        Use for: logging, metrics, setup
+
+        Args:
+            message: The message being processed
+            context: BackgroundContext (SSE closed, using POST updates)
+
+        Example:
+            async def on_task_start(self, message: str, context: BackgroundContext) -> None:
+                self.logger.info(f"Starting background task for job {context.job_id}")
+                await self.metrics.increment("background_tasks_started")
+        """
+        pass
+
+    async def on_task_complete(self, message: str, result: str, context: BackgroundContext) -> None:  # noqa: B027
+        """
+        Called after process_message completes successfully in the background.
+
+        This is called AFTER the SSE connection has closed, during the background
+        processing phase.
+
+        Use for: logging, metrics, cleanup
+
+        Args:
+            message: The message that was processed
+            result: The result returned by process_message
+            context: BackgroundContext (SSE closed, using POST updates)
+
+        Example:
+            async def on_task_complete(
+                self, message: str, result: str, context: BackgroundContext
+            ) -> None:
+                self.logger.info(f"Background task completed for job {context.job_id}")
+                await self.metrics.increment("background_tasks_completed")
+        """
+        pass
+
+    async def on_task_error(
+        self, message: str, error: Exception, context: BackgroundContext
+    ) -> str | None:
+        """
+        Called when process_message raises an exception during background processing.
+
+        This is called AFTER the SSE connection has closed, during the background
+        processing phase with POST updates.
+
+        Use for: error logging, cleanup, custom error handling
+
+        Args:
+            message: The message being processed
+            error: The exception that was raised
+            context: BackgroundContext (SSE closed, using POST updates)
+
+        Returns:
+            Optional custom error message to override default
+            (return None to use default error message)
+
+        Example:
+            async def on_task_error(
+                self, message: str, error: Exception, context: BackgroundContext
+            ) -> str | None:
+                self.logger.error(f"Background task failed: {error}")
+                # Can still send updates via POST
+                await context.update_progress("Task failed, cleaning up...", 1.0, status="error")
+
+                if isinstance(error, MemoryError):
+                    return "Out of memory. Try reducing batch_size parameter."
+                return None  # Use default error message
+        """
+        return None
+
     async def handle_request(
-        self, message: str, context: MessageContext, metadata: dict[str, Any]
+        self, message: str, context: StreamingContext, metadata: dict[str, Any]
     ) -> str | None:
         """
         Handle async agent request: validate → ack via SSE → process with POST updates.
 
         For AsyncAgent, this method:
-        1. Validates using immediate_updater (SSE)
+        1. Validates using updater (SSE)
         2. If rejected: Sends error via SSE and returns
         3. If accepted:
-           - Sends ack via SSE (immediate_updater)
-           - Creates background_updater (POST)
+           - Sends ack via SSE (updater)
+           - Creates update_client (POST)
            - Immediately calls process_message() with background context
            - All agent updates POSTed, not via SSE
 
         The dual-updater pattern:
-        - immediate_updater (context._updater): For validation/ack via SSE
-        - background_updater (async_context._update_client): For processing via POST
+        - updater (context.updater): For validation/ack via SSE
+        - update_client (background_context.update_client): For processing via POST
 
         Args:
             message: The message to process
-            context: Message context with immediate_updater (SSE)
+            context: Streaming context with updater (SSE) for validation phase
             metadata: Request metadata for validation
 
         Returns:
             Final result from process_message() if validation passed, None if rejected
         """
-        # Step 1: Validate with immediate_updater (SSE)
+        # Step 1: Validate with updater (SSE)
         validation_result = await self.validate_message(message, metadata)
 
         # Step 2: Handle rejection via SSE
         if isinstance(validation_result, ValidationRejected):
             self.logger.warning(f"Message validation failed: {validation_result.reason}")
-            if context._updater:
-                text_part = TextPart(text=f"Validation failed: {validation_result.reason}")
-                msg = Message(
-                    message_id=str(uuid.uuid4()), role=Role.agent, parts=[Part(root=text_part)]
-                )
-                await context._updater.reject(message=msg)
+            text_part = TextPart(text=f"Validation failed: {validation_result.reason}")
+            msg = Message(
+                message_id=str(uuid.uuid4()), role=Role.agent, parts=[Part(root=text_part)]
+            )
+            await context.updater.reject(message=msg)
             return None
 
         # Step 3: Handle acceptance
@@ -263,29 +363,28 @@ class AsyncAgent(A2AAgent[AsyncContext]):
 
             self.logger.info("Validation passed, sending ack via SSE")
 
-            # Send ack via immediate_updater (SSE)
-            if context._updater:
-                ack_metadata = {}
-                if validation_result.estimated_duration_seconds:
-                    ack_metadata["estimated_duration_seconds"] = (
-                        validation_result.estimated_duration_seconds
-                    )
+            # Send ack via updater (SSE)
+            ack_metadata: dict[str, Any] = {}
+            if validation_result.estimated_duration_seconds:
+                ack_metadata["estimated_duration_seconds"] = (
+                    validation_result.estimated_duration_seconds
+                )
 
-                text_part = TextPart(text=ack_message)
-                msg = Message(
-                    message_id=str(uuid.uuid4()),
-                    role=Role.agent,
-                    parts=[Part(root=text_part)],
-                    metadata=ack_metadata if ack_metadata else None,
-                )
-                # Send submitted status and close SSE connection (final=True)
-                # Background processing will continue with POST updates
-                await context._updater.update_status(
-                    state=TaskState.submitted,
-                    message=msg,
-                    final=True,
-                    metadata=ack_metadata if ack_metadata else None,
-                )
+            text_part = TextPart(text=ack_message)
+            msg = Message(
+                message_id=str(uuid.uuid4()),
+                role=Role.agent,
+                parts=[Part(root=text_part)],
+                metadata=ack_metadata if ack_metadata else None,
+            )
+            # Send submitted status and close SSE connection (final=True)
+            # Background processing will continue with POST updates
+            await context.updater.update_status(
+                state=TaskState.submitted,
+                message=msg,
+                final=True,
+                metadata=ack_metadata if ack_metadata else None,
+            )
 
             # Step 4: Extract background job params
             if BACKGROUND_JOB_EXTENSION_URI not in metadata:
@@ -367,20 +466,54 @@ class AsyncAgent(A2AAgent[AsyncContext]):
             base_url=base_url,
         )
 
+        background_context = None
+
         try:
-            # Build async context with POST updater
-            async_context = AsyncContext(
+            # Build background context with POST updater
+            background_context = BackgroundContext(
                 user_id=user_id,
                 thread_id=thread_id,
                 file_access_token=file_access_token,
                 metadata=metadata,
                 job_id=job_id,
-                _update_client=update_client,
+                update_client=update_client,
             )
 
-            # Process message with POST updates
-            self.logger.info(f"Background processing started for job {job_id}")
-            final_message = await self.process_message(message, async_context)
+            # Get timeout from agent configuration
+            max_duration = self.get_max_duration_seconds()
+            self.logger.info(
+                f"Background processing started for job {job_id} with {max_duration}s timeout"
+            )
+
+            # Wrap processing with timeout enforcement
+            async def _process_with_hooks() -> str:
+                """Helper to wrap processing with lifecycle hooks."""
+                await self.on_task_start(message, background_context)
+                result = await self.process_message(message, background_context)
+                await self.on_task_complete(message, result, background_context)
+                return result
+
+            try:
+                # Use asyncio.wait_for for timeout enforcement (compatible with Python 3.7+)
+                final_message = await asyncio.wait_for(_process_with_hooks(), timeout=max_duration)
+
+            except asyncio.TimeoutError:
+                # Handle timeout specifically
+                timeout_msg = (
+                    f"Task exceeded maximum duration of {max_duration} seconds "
+                    f"({max_duration // 60} minutes)"
+                )
+                self.logger.error(f"Background task timed out for job {job_id}: {timeout_msg}")
+
+                # Call error hook for timeout
+                custom_error = await self.on_task_error(
+                    message, TimeoutError(timeout_msg), background_context
+                )
+                error_message = custom_error or timeout_msg
+
+                # POST timeout failure
+                await update_client.post_failure(error_message)
+                return
 
             # POST completion
             self.logger.info(f"Background processing completed for job {job_id}")
@@ -388,7 +521,17 @@ class AsyncAgent(A2AAgent[AsyncContext]):
 
         except Exception as e:
             self.logger.error(f"Background work failed for job {job_id}: {e}", exc_info=True)
-            await update_client.post_failure(str(e))
+
+            # Call error hook to get custom error message
+            if background_context:
+                custom_error = await self.on_task_error(message, e, background_context)
+            else:
+                custom_error = None
+
+            error_message = custom_error or str(e)
+
+            # POST failure with custom or default error message
+            await update_client.post_failure(error_message)
 
         finally:
             # Always close HTTP client to prevent connection leaks

@@ -4,22 +4,17 @@ import logging
 import os
 from typing import Any
 
-try:
-    import uvicorn
-    from a2a.server.apps import A2AStarletteApplication
-    from a2a.server.request_handlers import DefaultRequestHandler
-    from a2a.server.tasks import InMemoryTaskStore
+import uvicorn
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
 
-    UVICORN_AVAILABLE = True
-except ImportError:
-    UVICORN_AVAILABLE = False
-
-from health_universe_a2a.base import A2AAgent
+from health_universe_a2a.base import A2AAgentBase
 
 logger = logging.getLogger(__name__)
 
 
-def create_app(agent: A2AAgent, task_store: Any | None = None) -> Any:
+def create_app(agent: A2AAgentBase, task_store: Any | None = None) -> Any:
     """
     Create a Starlette ASGI application for an A2A agent.
 
@@ -39,28 +34,23 @@ def create_app(agent: A2AAgent, task_store: Any | None = None) -> Any:
         ImportError: If uvicorn or a2a server dependencies are not installed
 
     Example:
-        from health_universe_a2a import A2AAgent, create_app
+        from health_universe_a2a import StreamingAgent, StreamingContext, create_app
         import uvicorn
 
-        class MyAgent(A2AAgent):
+        class MyAgent(StreamingAgent):
             def get_agent_name(self) -> str:
                 return "My Agent"
 
             def get_agent_description(self) -> str:
                 return "Does something useful"
 
-            async def process_message(self, message: str, context) -> str:
+            async def process_message(self, message: str, context: StreamingContext) -> str:
                 return f"Processed: {message}"
 
         agent = MyAgent()
         app = create_app(agent)
         uvicorn.run(app, host="0.0.0.0", port=8000)
     """
-    if not UVICORN_AVAILABLE:
-        raise ImportError(
-            "Server dependencies not installed. "
-            'Install with: uv pip install "health-universe-a2a[server]" or pip install uvicorn a2a'
-        )
 
     logger.info(f"Creating app for {agent.get_agent_name()} v{agent.get_agent_version()}")
 
@@ -82,7 +72,7 @@ def create_app(agent: A2AAgent, task_store: Any | None = None) -> Any:
 
 
 def serve(
-    agent: A2AAgent,
+    agent: A2AAgentBase,
     host: str | None = None,
     port: int | None = None,
     reload: bool | None = None,
@@ -101,7 +91,7 @@ def serve(
         RELOAD: Enable auto-reload on code changes (default: "false")
 
     Args:
-        agent: The A2AAgent instance to serve
+        agent: The A2AAgentBase instance to serve (StreamingAgent or AsyncAgent)
         host: Server host (overrides env var)
         port: Server port (overrides env var)
         reload: Enable auto-reload (overrides env var)
@@ -112,27 +102,22 @@ def serve(
         ImportError: If uvicorn or a2a server dependencies are not installed
 
     Example:
-        from health_universe_a2a import A2AAgent, serve
+        from health_universe_a2a import StreamingAgent, StreamingContext, serve
 
-        class MyAgent(A2AAgent):
+        class MyAgent(StreamingAgent):
             def get_agent_name(self) -> str:
                 return "My Agent"
 
             def get_agent_description(self) -> str:
                 return "Does something useful"
 
-            async def process_message(self, message: str, context) -> str:
+            async def process_message(self, message: str, context: StreamingContext) -> str:
                 return f"Processed: {message}"
 
         if __name__ == "__main__":
             agent = MyAgent()
             serve(agent)  # Starts server on http://0.0.0.0:8000
     """
-    if not UVICORN_AVAILABLE:
-        raise ImportError(
-            "Server dependencies not installed. "
-            'Install with: uv pip install "health-universe-a2a[server]" or pip install uvicorn a2a'
-        )
 
     # Configuration from environment with overrides
     actual_host = host if host is not None else os.getenv("HOST", "0.0.0.0")

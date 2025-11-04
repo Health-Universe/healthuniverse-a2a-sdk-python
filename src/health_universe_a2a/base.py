@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar, cast
+from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -12,6 +12,7 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
+    AgentExtension,
     AgentInterface,
     AgentProvider,
     AgentSkill,
@@ -21,30 +22,33 @@ from a2a.types import (
     TextPart,
 )
 
-from health_universe_a2a.context import MessageContext
+from health_universe_a2a.context import BaseContext, StreamingContext
 from health_universe_a2a.inter_agent import AgentResponse
-from health_universe_a2a.types.extensions import FILE_ACCESS_EXTENSION_URI, AgentExtension
+from health_universe_a2a.types.extensions import FILE_ACCESS_EXTENSION_URI
 from health_universe_a2a.types.validation import (
     ValidationAccepted,
-    ValidationRejected,
     ValidationResult,
 )
 
 logger = logging.getLogger(__name__)
 
-# TypeVar for context, bound to MessageContext (which AsyncContext extends)
-ContextT = TypeVar("ContextT", bound=MessageContext)
 
-
-class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
+class A2AAgentBase(AgentExecutor, ABC):
     """
-    Base class for all A2A agents.
+    Base class providing shared configuration and utilities for A2A agents.
 
-    This is a simplified interface for building A2A-compliant agents.
+    This class contains all shared functionality like agent card creation,
+    validation, inter-agent communication, and lifecycle hooks.
+
+    Execution methods (process_message, handle_request) are defined by subclasses:
+    - StreamingAgent: For short-running tasks with SSE streaming
+    - AsyncAgent: For long-running background tasks with POST updates
+
     Subclasses must implement:
     - get_agent_name()
     - get_agent_description()
-    - process_message()
+    - process_message() (with their specific context type)
+    - handle_request() (with their specific execution pattern)
 
     Optional overrides:
     - validate_message() - Validate incoming messages
@@ -53,26 +57,13 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
     - get_supported_input_formats() - Supported input MIME types
     - get_supported_output_formats() - Supported output MIME types
     - Lifecycle hooks: on_startup(), on_shutdown(), etc.
-
-    Example:
-        class MyAgent(A2AAgent):
-            def get_agent_name(self) -> str:
-                return "My Agent"
-
-            def get_agent_description(self) -> str:
-                return "Does something useful"
-
-            async def process_message(self, message: str, context: MessageContext) -> str:
-                await context.update_progress("Working...", 0.5)
-                result = await self.do_work(message)
-                return f"Done! Result: {result}"
     """
 
     def __init__(self) -> None:
         """Initialize the agent with logging."""
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    # Required abstract methods
+    # Required abstract methods for configuration
 
     @abstractmethod
     def get_agent_name(self) -> str:
@@ -95,119 +86,37 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
         pass
 
     @abstractmethod
-    async def process_message(self, message: str, context: ContextT) -> str:
+    async def handle_request(
+        self, message: str, context: StreamingContext, metadata: dict[str, Any]
+    ) -> str | None:
         """
-        Process an incoming message and return a response.
+        Handle an incoming request with a StreamingContext.
 
-        Use context methods to send progress updates and artifacts during processing.
+        This is called by execute() and must be implemented by subclasses.
+
+        For StreamingAgent:
+            - Validate the message
+            - Process it via process_message()
+            - Return the result
+
+        For AsyncAgent:
+            - Validate the message via StreamingContext (SSE)
+            - Send acknowledgment via StreamingContext
+            - Spawn background task with BackgroundContext
+            - Return acknowledgment message
 
         Args:
-            message: The extracted text message to process
-            context: Context with update methods and metadata
+            message: The extracted message text
+            context: StreamingContext for SSE updates
+            metadata: Request metadata
 
         Returns:
-            Final response message as string
-
-        Example:
-            async def process_message(self, message: str, context: MessageContext) -> str:
-                await context.update_progress("Loading...", 0.2)
-                data = await self.load_data()
-
-                await context.update_progress("Processing...", 0.6)
-                result = await self.process(data)
-
-                await context.add_artifact("Results", json.dumps(result))
-                return "Processing complete!"
+            Result string (for StreamingAgent) or ack message (for AsyncAgent),
+            or None if validation rejected
         """
         pass
 
-    # Request handling with validation
-
-    async def handle_request(
-        self, message: str, context: ContextT, metadata: dict[str, Any]
-    ) -> str | None:
-        """
-        Handle complete request flow: validation → processing.
-
-        This method orchestrates the full A2A request flow:
-        1. Validates the message via validate_message()
-        2. If rejected: Sends error update and returns None
-        3. If accepted: Calls lifecycle hooks and process_message()
-
-        The SDK handles sending appropriate A2A task updates based on validation result.
-
-        Args:
-            message: The message to process
-            context: Message context for sending updates
-            metadata: Request metadata for validation
-
-        Returns:
-            Final response string if accepted and processing succeeds, None if rejected
-
-        Note: This is called by the A2A server integration (NestJS backend).
-        You typically don't need to override this - override validate_message() and
-        process_message() instead.
-        """
-        # Step 1: Validate
-        validation_result = await self.validate_message(message, metadata)
-
-        # Step 2: Handle rejection
-        if isinstance(validation_result, ValidationRejected):
-            self.logger.warning(f"Message validation failed: {validation_result.reason}")
-            # Send rejection via A2A protocol using TaskUpdater.reject()
-            if context._updater:
-                # Create rejection message
-                text_part = TextPart(text=f"Validation failed: {validation_result.reason}")
-                msg = Message(
-                    message_id=str(uuid.uuid4()),
-                    role=Role.agent,
-                    parts=[Part(root=text_part)],
-                )
-
-                # Reject the task
-                await context._updater.reject(message=msg)
-            return None
-
-        # Step 3: Handle acceptance
-        if isinstance(validation_result, ValidationAccepted):
-            self.logger.info(
-                "Message validation passed"
-                + (
-                    f" (estimated: {validation_result.estimated_duration_seconds}s)"
-                    if validation_result.estimated_duration_seconds
-                    else ""
-                )
-            )
-
-            # Call lifecycle hook
-            await self.on_task_start(message, context)
-
-            try:
-                # Process the message
-                result = await self.process_message(message, context)
-
-                # Call completion hook
-                await self.on_task_complete(message, result, context)
-
-                return result
-
-            except Exception as error:
-                # Call error hook
-                custom_error = await self.on_task_error(message, error, context)
-                error_msg = custom_error or f"Processing error: {str(error)}"
-
-                # Send error update
-                if context._updater:
-                    await context._updater.update_progress(
-                        message=error_msg, progress=None, status="error"
-                    )
-
-                # Re-raise for server to handle
-                raise
-
-        return None
-
-    # AgentExecutor interface implementation
+    # AgentExecutor interface implementation (shared by all agent types)
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """
@@ -217,7 +126,7 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
         It:
         1. Creates a TaskUpdater from the event_queue
         2. Extracts message text and metadata from RequestContext
-        3. Builds a MessageContext for the agent
+        3. Builds a StreamingContext for the agent
         4. Calls agent.handle_request()
         5. Sends completion message if handle_request returns a result
 
@@ -271,20 +180,34 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
                 if isinstance(file_ext_data, dict):
                     file_access_token = file_ext_data.get("access_token")
 
-            # Build MessageContext for agent
-            message_context = MessageContext(
+            # Extract JWT auth token for inter-agent calls
+            # Check common locations where the token might be stored
+            auth_token = None
+            if context.call_context and context.call_context.state:
+                # Check for authorization in call_context.state (common location)
+                auth_token = context.call_context.state.get("authorization")
+                # Also try lowercase and with Bearer prefix
+                if not auth_token:
+                    auth_header = context.call_context.state.get("Authorization")
+                    if auth_header and isinstance(auth_header, str):
+                        # Remove "Bearer " prefix if present
+                        auth_token = auth_header.replace("Bearer ", "").strip()
+
+            # Build StreamingContext for agent
+            message_context = StreamingContext(
                 user_id=user_id,
                 thread_id=thread_id,
                 file_access_token=file_access_token,
+                auth_token=auth_token,
                 metadata=metadata,
-                _updater=updater,
-                _request_context=context,
+                updater=updater,
+                request_context=context,
             )
 
             # Call agent's handle_request (this is the main agent logic)
             logger.info("Calling agent.handle_request()")
             result = await self.handle_request(
-                message=message_text, context=cast(ContextT, message_context), metadata=metadata
+                message=message_text, context=message_context, metadata=metadata
             )
 
             logger.info(f"Agent returned result: {result is not None}")
@@ -331,15 +254,46 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
         """
         Cancel the agent execution.
 
-        This is called when a task cancellation is requested.
-        Subclasses can override to implement custom cancellation logic.
+        **IMPORTANT: Cancellation is not fully implemented in this SDK.**
+
+        This method is called when a task cancellation is requested by the A2A
+        protocol, but the default implementation does not:
+        - Set any cancellation flags on the context
+        - Stop or interrupt running tasks
+        - Provide any automatic cancellation behavior
+
+        Current limitations:
+        - context.is_cancelled() will always return False
+        - The _cancelled flag is never set to True
+        - Agents must implement their own cancellation logic if needed
+
+        For production use, consider:
+        1. Override this method in your agent subclass
+        2. Store cancellation state (e.g., in a shared dict keyed by task_id)
+        3. Check that state periodically in your process_message() implementation
+        4. For AsyncAgent background tasks, use asyncio.CancelledError handling
 
         Args:
             context: Request context for the task to cancel
             event_queue: Event queue for sending cancellation updates
+
+        Example implementation:
+            # In your agent class:
+            def __init__(self):
+                super().__init__()
+                self._cancelled_tasks = set()
+
+            async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
+                self._cancelled_tasks.add(context.task_id)
+                logger.info(f"Marked task {context.task_id} as cancelled")
+
+            async def process_message(self, message: str, context: StreamingContext) -> str:
+                if context.task_id in self._cancelled_tasks:
+                    return "Task was cancelled"
+                # ... rest of processing
         """
         logger.info(f"Cancelling execution for {self.get_agent_name()} task_id={context.task_id}")
-        # Default implementation does nothing - subclasses can override
+        # Default implementation does nothing - cancellation not fully implemented
 
     def _extract_message_text(self, message: Message) -> str:
         """
@@ -351,7 +305,7 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
         Returns:
             Concatenated text from all text parts
         """
-        text_parts = []
+        text_parts: list[str] = []
 
         for part in message.parts:
             if part.root and hasattr(part.root, "text"):
@@ -455,40 +409,6 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
 
     # AgentCard creation and configuration
 
-    def _convert_extensions_to_a2a_format(self) -> list[Any]:
-        """
-        Convert our custom AgentExtension dataclasses to a2a SDK's AgentExtension Pydantic models.
-
-        Returns:
-            List of a2a SDK AgentExtension instances
-        """
-        # Import a2a SDK's AgentExtension (not our custom one)
-        from a2a.types import AgentExtension as A2AAgentExtension
-
-        from health_universe_a2a.types.extensions import (
-            AgentExtension as CustomAgentExtension,
-        )
-
-        extensions = self.get_extensions()
-        a2a_extensions = []
-
-        for ext in extensions:
-            if isinstance(ext, CustomAgentExtension):
-                # Convert our dataclass to a2a SDK's Pydantic model
-                a2a_ext = A2AAgentExtension(
-                    uri=ext.uri,
-                    # Map metadata to params if present
-                    params=ext.metadata if ext.metadata else None,
-                    # All our extensions are optional
-                    required=False,
-                )
-                a2a_extensions.append(a2a_ext)
-            else:
-                # Already an a2a SDK AgentExtension, use as-is
-                a2a_extensions.append(ext)
-
-        return a2a_extensions
-
     def create_agent_card(self) -> AgentCard:
         """
         Create the AgentCard for agent discovery.
@@ -527,7 +447,7 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
             capabilities=AgentCapabilities(
                 streaming=self.supports_streaming(),
                 push_notifications=self.supports_push_notifications(),
-                extensions=self._convert_extensions_to_a2a_format(),
+                extensions=self.get_extensions(),
             ),
             # Skills (optional but recommended)
             skills=self.get_agent_skills(),
@@ -730,7 +650,7 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
         self,
         agent_identifier: str,
         message: str,
-        context: ContextT,
+        context: BaseContext,
         timeout: float = 30.0,
     ) -> AgentResponse:
         """
@@ -756,7 +676,7 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
             ValueError: If agent identifier cannot be resolved
 
         Example:
-            async def process_message(self, message: str, context: MessageContext) -> str:
+            async def process_message(self, message: str, context: StreamingContext) -> str:
                 # Call local agent (bypasses ingress/egress)
                 response = await self.call_other_agent("/processor", message, context)
                 processed = response.text
@@ -782,7 +702,7 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
         self,
         agent_identifier: str,
         data: Any,
-        context: ContextT,
+        context: BaseContext,
         timeout: float = 30.0,
     ) -> "AgentResponse":
         """
@@ -808,7 +728,7 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
             ValueError: If agent identifier cannot be resolved
 
         Example:
-            async def process_message(self, message: str, context: MessageContext) -> str:
+            async def process_message(self, message: str, context: StreamingContext) -> str:
                 # Call with structured data
                 response = await self.call_other_agent_with_data(
                     "/data-processor",
@@ -867,7 +787,7 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
                 def get_agent_description(self) -> str:
                     return "Does something useful"
 
-                async def process_message(self, message: str, context: MessageContext) -> str:
+                async def process_message(self, message: str, context: StreamingContext) -> str:
                     return f"Processed: {message}"
 
             if __name__ == "__main__":
@@ -905,66 +825,3 @@ class A2AAgent(AgentExecutor, ABC, Generic[ContextT]):
                 await self.model.unload()
         """
         pass
-
-    async def on_task_start(self, message: str, context: ContextT) -> None:  # noqa: B027
-        """
-        Called after validation passes, before process_message.
-
-        Use for: logging, metrics, setup
-
-        Args:
-            message: The message being processed
-            context: Message context
-
-        Example:
-            async def on_task_start(self, message: str, context: MessageContext) -> None:
-                self.logger.info(f"Starting task for user {context.user_id}")
-                await self.metrics.increment("tasks_started")
-        """
-        pass
-
-    async def on_task_complete(self, message: str, result: str, context: ContextT) -> None:  # noqa: B027
-        """
-        Called after process_message completes successfully.
-
-        Use for: logging, metrics, cleanup
-
-        Args:
-            message: The message that was processed
-            result: The result returned by process_message
-            context: Message context
-
-        Example:
-            async def on_task_complete(
-                self, message: str, result: str, context: MessageContext
-            ) -> None:
-                self.logger.info(f"Task completed for user {context.user_id}")
-                await self.metrics.increment("tasks_completed")
-        """
-        pass
-
-    async def on_task_error(self, message: str, error: Exception, context: ContextT) -> str | None:
-        """
-        Called when process_message raises an exception.
-
-        Use for: error logging, cleanup, custom error handling
-
-        Args:
-            message: The message being processed
-            error: The exception that was raised
-            context: Message context
-
-        Returns:
-            Optional custom error message to override default
-            (return None to use default error message)
-
-        Example:
-            async def on_task_error(
-                self, message: str, error: Exception, context: MessageContext
-            ) -> str | None:
-                self.logger.error(f"Task failed: {error}")
-                if isinstance(error, TimeoutError):
-                    return "Processing timed out. Please try a smaller request."
-                return None  # Use default error message
-        """
-        return None

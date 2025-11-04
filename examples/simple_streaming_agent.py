@@ -7,7 +7,7 @@ A basic calculator agent that demonstrates:
 - Basic error handling
 """
 
-from health_universe_a2a import MessageContext, StreamingAgent
+from health_universe_a2a import StreamingAgent, StreamingContext
 
 
 class CalculatorAgent(StreamingAgent):
@@ -19,7 +19,7 @@ class CalculatorAgent(StreamingAgent):
     def get_agent_description(self) -> str:
         return "Performs basic arithmetic calculations (add, subtract, multiply, divide)"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         """
         Process a calculation request.
 

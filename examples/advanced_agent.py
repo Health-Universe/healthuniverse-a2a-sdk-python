@@ -15,16 +15,17 @@ Run with:
 
 import asyncio
 import json
+from typing import Any
 
 from health_universe_a2a import (
-    A2AAgent,
-    MessageContext,
+    StreamingContext,
     ValidationAccepted,
     ValidationRejected,
 )
+from health_universe_a2a.streaming import StreamingAgent
 
 
-class DataProcessorAgent(A2AAgent):
+class DataProcessorAgent(StreamingAgent):
     """An agent that processes data with validation and progress tracking."""
 
     def __init__(self) -> None:
@@ -45,7 +46,7 @@ class DataProcessorAgent(A2AAgent):
     # Custom validation
 
     async def validate_message(
-        self, message: str, metadata: dict
+        self, message: str, metadata: dict[str, Any]
     ) -> ValidationAccepted | ValidationRejected:
         """Validate that the message is not empty and not too long."""
         if not message or len(message.strip()) == 0:
@@ -62,7 +63,7 @@ class DataProcessorAgent(A2AAgent):
 
     # Main processing
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         """Process the message with progress updates."""
         words = message.split()
 
@@ -94,7 +95,7 @@ class DataProcessorAgent(A2AAgent):
         await context.update_progress("Generating report...", 0.75)
 
         # Create analysis result
-        analysis = {
+        analysis: dict[str, Any] = {
             "word_count": word_count,
             "character_count": len(message),
             "sentiment": sentiment,
@@ -130,17 +131,17 @@ class DataProcessorAgent(A2AAgent):
         self.logger.info("🚀 Data Processor Agent starting up!")
         self.processed_count = 0
 
-    async def on_task_start(self, message: str, context: MessageContext) -> None:
+    async def on_task_start(self, message: str, context: StreamingContext) -> None:
         """Called before processing each message."""
         self.logger.info(f"📝 Starting task for user: {context.user_id}")
 
-    async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:
+    async def on_task_complete(self, message: str, result: str, context: StreamingContext) -> None:
         """Called after successfully processing a message."""
         self.processed_count += 1
         self.logger.info(f"✅ Task completed! Total processed: {self.processed_count}")
 
     async def on_task_error(
-        self, message: str, error: Exception, context: MessageContext
+        self, message: str, error: Exception, context: StreamingContext
     ) -> str | None:
         """Called when an error occurs during processing."""
         self.logger.error(f"❌ Task failed: {error}")

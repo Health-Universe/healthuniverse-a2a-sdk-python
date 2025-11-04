@@ -16,9 +16,10 @@ import httpx
 import pytest
 import uvicorn
 
-from health_universe_a2a import A2AAgent, MessageContext, create_app
+from health_universe_a2a import StreamingContext, create_app
 from health_universe_a2a.async_agent import AsyncAgent
-from health_universe_a2a.context import AsyncContext
+from health_universe_a2a.context import BackgroundContext
+from health_universe_a2a.streaming import StreamingAgent
 from health_universe_a2a.types.validation import ValidationAccepted
 
 
@@ -31,7 +32,7 @@ def find_free_port() -> int:
         return port
 
 
-class TestE2EAgent(A2AAgent):
+class TestE2EAgent(StreamingAgent):
     """Simple agent for end-to-end testing."""
 
     def get_agent_name(self) -> str:
@@ -43,7 +44,7 @@ class TestE2EAgent(A2AAgent):
     def get_agent_version(self) -> str:
         return "1.0.0"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         """Echo the message with a prefix."""
         user = context.user_id or "anonymous"
         return f"Hello {user}! You said: {message}"
@@ -68,7 +69,7 @@ class TestE2EAsyncAgent(AsyncAgent):
         """Accept all messages for testing."""
         return ValidationAccepted(estimated_duration_seconds=60)
 
-    async def process_message(self, message: str, context: AsyncContext) -> str:
+    async def process_message(self, message: str, context: BackgroundContext) -> str:
         """Process message with progress updates."""
         # Simulate some work with progress updates
         await context.update_progress("Starting background work...", 0.1)
@@ -210,7 +211,7 @@ class TestE2EMessageProcessing:
 
     def test_send_message_via_jsonrpc(self, server_url: str) -> None:
         """Test sending a message through the full stack with httpx."""
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "message/send",
             "params": {
@@ -267,7 +268,7 @@ class TestE2EMessageProcessing:
 
     def test_invalid_jsonrpc_method(self, server_url: str) -> None:
         """Test that invalid JSON-RPC methods return errors."""
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "invalid/method",
             "params": {},
@@ -562,7 +563,7 @@ class TestE2EBackgroundProcessing:
 
                 return ValidationRejected(reason="Messages not accepted in test mode")
 
-            async def process_message(self, message: str, context: AsyncContext) -> str:
+            async def process_message(self, message: str, context: BackgroundContext) -> str:
                 # Should never be called
                 return "Should not reach here"
 

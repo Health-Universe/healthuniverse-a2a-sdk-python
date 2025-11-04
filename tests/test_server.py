@@ -5,15 +5,15 @@ from typing import Any
 from starlette.testclient import TestClient
 
 from health_universe_a2a import (
-    A2AAgent,
-    MessageContext,
+    StreamingAgent,
+    StreamingContext,
     ValidationAccepted,
     ValidationRejected,
     create_app,
 )
 
 
-class TestServerAgent(A2AAgent):
+class TestServerAgent(StreamingAgent):
     """Simple agent for server testing."""
 
     def get_agent_name(self) -> str:
@@ -25,11 +25,11 @@ class TestServerAgent(A2AAgent):
     def get_agent_version(self) -> str:
         return "1.0.0"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         return f"Echo: {message}"
 
 
-class TestValidatingAgent(A2AAgent):
+class TestValidatingAgent(StreamingAgent):
     """Agent with custom validation for testing rejection flow."""
 
     def get_agent_name(self) -> str:
@@ -45,7 +45,7 @@ class TestValidatingAgent(A2AAgent):
             return ValidationRejected(reason="Message too short")
         return ValidationAccepted()
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         return f"Valid: {message}"
 
 
@@ -142,7 +142,7 @@ class TestJSONRPCEndpoint:
         app = create_app(agent)
         client = TestClient(app)
 
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "message/send",
             "params": {
@@ -166,7 +166,7 @@ class TestJSONRPCEndpoint:
         app = create_app(agent)
         client = TestClient(app)
 
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "message/send",
             "params": {
@@ -192,7 +192,7 @@ class TestJSONRPCEndpoint:
         app = create_app(agent)
         client = TestClient(app)
 
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "invalid/method",
             "params": {},
@@ -211,7 +211,7 @@ class TestJSONRPCEndpoint:
         app = create_app(agent)
         client = TestClient(app)
 
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "message/send",
             "id": 1,
@@ -235,7 +235,7 @@ class TestMessageProcessingFlow:
         app = create_app(agent)
         client = TestClient(app)
 
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "message/send",
             "params": {
@@ -267,7 +267,7 @@ class TestValidationFlow:
         client = TestClient(app)
 
         # Short message should be rejected
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "message/send",
             "params": {
@@ -292,7 +292,7 @@ class TestValidationFlow:
         client = TestClient(app)
 
         # Long enough message should be accepted
-        request_data = {
+        request_data: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": "message/send",
             "params": {
@@ -316,7 +316,7 @@ class TestCustomAgentConfiguration:
     def test_custom_version_in_agent_card(self) -> None:
         """Custom agent version should appear in agent card."""
 
-        class CustomVersionAgent(A2AAgent):
+        class CustomVersionAgent(StreamingAgent):
             def get_agent_name(self) -> str:
                 return "Custom Agent"
 
@@ -326,7 +326,7 @@ class TestCustomAgentConfiguration:
             def get_agent_version(self) -> str:
                 return "2.5.0"
 
-            async def process_message(self, message: str, context: MessageContext) -> str:
+            async def process_message(self, message: str, context: StreamingContext) -> str:
                 return "processed"
 
         agent = CustomVersionAgent()
@@ -341,7 +341,7 @@ class TestCustomAgentConfiguration:
     def test_custom_formats_in_agent_card(self) -> None:
         """Custom input/output formats should appear in agent card."""
 
-        class CustomFormatsAgent(A2AAgent):
+        class CustomFormatsAgent(StreamingAgent):
             def get_agent_name(self) -> str:
                 return "Formats Agent"
 
@@ -354,7 +354,7 @@ class TestCustomAgentConfiguration:
             def get_supported_output_formats(self) -> list[str]:
                 return ["application/json", "text/html"]
 
-            async def process_message(self, message: str, context: MessageContext) -> str:
+            async def process_message(self, message: str, context: StreamingContext) -> str:
                 return "processed"
 
         agent = CustomFormatsAgent()

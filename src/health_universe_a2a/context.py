@@ -4,24 +4,28 @@ import os
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from a2a.server.agent_execution import RequestContext
+from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Part, Role, TaskState, TextPart
 from pydantic import BaseModel, ConfigDict, Field
+
+from health_universe_a2a.update_client import BackgroundUpdateClient
 
 if TYPE_CHECKING:
     from health_universe_a2a.inter_agent import InterAgentClient
 
 
-class MessageContext(BaseModel):
+class BaseContext(BaseModel):
     """
-    Context for StreamingAgent process_message method.
+    Base context class with common fields for all agent contexts.
 
-    Provides methods to send progress updates and artifacts during processing.
+    This is an abstract base class - use StreamingContext or BackgroundContext instead.
 
     Attributes:
-        user_id: User ID from request metadata
-        thread_id: Thread/conversation ID from request metadata
-        file_access_token: Supabase access token for file operations (if file access enabled)
-        auth_token: JWT token from original request (for inter-agent calls)
+        user_id: User ID from request metadata (optional, may not be present)
+        thread_id: Thread/conversation ID from request metadata (optional)
+        file_access_token: Supabase access token for file operations (optional)
+        auth_token: JWT token from original request for inter-agent calls (optional)
         metadata: Raw metadata from A2A request
     """
 
@@ -32,120 +36,26 @@ class MessageContext(BaseModel):
     file_access_token: str | None = None
     auth_token: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-    # Internal fields (not for external use)
-    _updater: Any = None
-    _request_context: Any = None
     _cancelled: bool = False
-
-    async def update_progress(
-        self, message: str, progress: float | None = None, status: str = "working"
-    ) -> None:
-        """
-        Send a progress update to the UI via A2A protocol.
-
-        Args:
-            message: Status message to display
-            progress: Progress from 0.0 to 1.0 (optional)
-            status: Task status (default: "working")
-
-        Example:
-            await context.update_progress("Loading data...", 0.2)
-            await context.update_progress("Processing...", 0.5)
-
-        Note:
-            Uses TaskUpdater.update_status() with TaskState.working by default.
-            The progress value is stored in message metadata.
-        """
-        if self._updater:
-            # Create message with progress metadata
-            metadata = {}
-            if progress is not None:
-                metadata["progress"] = progress
-
-            # Create A2A Message object
-            text_part = TextPart(text=message)
-            msg = Message(
-                message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=text_part)],
-                metadata=metadata if metadata else None,
-            )
-
-            # Map status string to TaskState
-            state_map = {
-                "working": TaskState.working,
-                "completed": TaskState.completed,
-                "failed": TaskState.failed,
-                "error": TaskState.failed,
-                "queued": TaskState.submitted,
-            }
-            task_state = state_map.get(status, TaskState.working)
-
-            # Update status via TaskUpdater
-            await self._updater.update_status(
-                state=task_state,
-                message=msg,
-                final=False,
-                metadata=metadata if metadata else None,
-            )
-
-    async def add_artifact(
-        self,
-        name: str,
-        content: str,
-        data_type: str = "text/plain",
-        description: str = "",
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """
-        Add an artifact to the response via A2A protocol.
-
-        Artifacts appear in the UI and can be downloaded/viewed by users.
-
-        Args:
-            name: Artifact name (e.g., "Analysis Results")
-            content: Artifact content (string or bytes)
-            data_type: MIME type (e.g., "application/json", "image/png")
-            description: Optional description
-            metadata: Optional metadata dict
-
-        Example:
-            await context.add_artifact(
-                name="Results",
-                content=json.dumps({"score": 0.95}),
-                data_type="application/json"
-            )
-
-        Note:
-            Uses TaskUpdater.add_artifact() with A2A Part objects.
-        """
-        if self._updater:
-            # Create artifact metadata
-            artifact_metadata = metadata or {}
-            if description:
-                artifact_metadata["description"] = description
-            artifact_metadata["data_type"] = data_type
-
-            # Create A2A Part with content
-            text_part = TextPart(text=content, metadata=artifact_metadata)
-            parts = [Part(root=text_part)]
-
-            # Add artifact via TaskUpdater
-            await self._updater.add_artifact(
-                parts=parts,
-                name=name,
-                metadata=artifact_metadata,
-            )
 
     def is_cancelled(self) -> bool:
         """
         Check if the task was cancelled by the user.
 
+        **IMPORTANT: Currently always returns False.**
+
+        The cancellation feature is not fully implemented in this SDK. The
+        _cancelled flag is never set to True by the default cancel() method.
+
+        For production use with cancellation support:
+        1. Override cancel() in your agent (see A2AAgentBase.cancel() docs)
+        2. Implement your own cancellation state tracking
+        3. Check that state in your processing loops
+
         Use this to gracefully stop processing if the user cancels the request.
 
         Returns:
-            True if task was cancelled, False otherwise
+            True if task was cancelled, False otherwise (currently always False)
 
         Example:
             while processing:
@@ -207,24 +117,175 @@ class MessageContext(BaseModel):
         )
 
 
-class AsyncContext(MessageContext):
+class StreamingContext(BaseContext):
     """
-    Context for AsyncAgent process_message method.
+    Context for StreamingAgent with SSE streaming updates.
 
-    Extends MessageContext with job tracking for long-running tasks.
+    This context is used for short-running tasks (< 5 min) that stream
+    progress updates via Server-Sent Events (SSE).
 
     Attributes:
-        job_id: Async job ID from the backend system
-        user_id: User ID from request metadata
-        thread_id: Thread/conversation ID from request metadata
-        file_access_token: Supabase access token for file operations (if file access enabled)
+        updater: TaskUpdater instance for sending SSE updates (always present)
+        request_context: Original A2A RequestContext (always present)
+        user_id: User ID from request metadata (optional)
+        thread_id: Thread/conversation ID from request metadata (optional)
+        file_access_token: Supabase access token for file operations (optional)
+        auth_token: JWT token from original request for inter-agent calls (optional)
         metadata: Raw metadata from A2A request
+
+    Example:
+        async def process_message(self, message: str, context: StreamingContext) -> str:
+            await context.update_progress("Loading data...", 0.2)
+            data = await load_data(message)
+
+            await context.update_progress("Processing...", 0.6)
+            results = await process_data(data)
+
+            await context.add_artifact(
+                name="Results",
+                content=json.dumps(results),
+                data_type="application/json"
+            )
+
+            return "Processing complete!"
     """
 
-    job_id: str = ""
+    updater: TaskUpdater
+    request_context: RequestContext
 
-    # Internal fields
-    _update_client: Any = None
+    async def update_progress(
+        self, message: str, progress: float | None = None, status: str = "working"
+    ) -> None:
+        """
+        Send a progress update to the UI via A2A protocol (SSE).
+
+        Args:
+            message: Status message to display
+            progress: Progress from 0.0 to 1.0 (optional)
+            status: Task status (default: "working")
+
+        Example:
+            await context.update_progress("Loading data...", 0.2)
+            await context.update_progress("Processing...", 0.5)
+
+        Note:
+            Updates are streamed live via SSE to the client.
+        """
+        # Create message with progress metadata
+        metadata: dict[str, Any] = {}
+        if progress is not None:
+            metadata["progress"] = progress
+
+        # Create A2A Message object
+        text_part = TextPart(text=message)
+        msg = Message(
+            message_id=str(uuid.uuid4()),
+            role=Role.agent,
+            parts=[Part(root=text_part)],
+            metadata=metadata if metadata else None,
+        )
+
+        # Map status string to TaskState
+        state_map = {
+            "working": TaskState.working,
+            "completed": TaskState.completed,
+            "failed": TaskState.failed,
+            "error": TaskState.failed,
+            "queued": TaskState.submitted,
+        }
+        task_state = state_map.get(status, TaskState.working)
+
+        # Update status via TaskUpdater
+        await self.updater.update_status(
+            state=task_state,
+            message=msg,
+            final=False,
+            metadata=metadata if metadata else None,
+        )
+
+    async def add_artifact(
+        self,
+        name: str,
+        content: str,
+        data_type: str = "text/plain",
+        description: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Add an artifact to the response via A2A protocol (SSE).
+
+        Artifacts appear in the UI and can be downloaded/viewed by users.
+
+        Args:
+            name: Artifact name (e.g., "Analysis Results")
+            content: Artifact content (string or bytes)
+            data_type: MIME type (e.g., "application/json", "image/png")
+            description: Optional description
+            metadata: Optional metadata dict
+
+        Example:
+            await context.add_artifact(
+                name="Results",
+                content=json.dumps({"score": 0.95}),
+                data_type="application/json"
+            )
+
+        Note:
+            Artifacts are streamed live via SSE to the client.
+        """
+        # Create artifact metadata
+        artifact_metadata = metadata or {}
+        if description:
+            artifact_metadata["description"] = description
+        artifact_metadata["data_type"] = data_type
+
+        # Create A2A Part with content
+        text_part = TextPart(text=content, metadata=artifact_metadata)
+        parts = [Part(root=text_part)]
+
+        # Add artifact via TaskUpdater
+        await self.updater.add_artifact(
+            parts=parts,
+            name=name,
+            metadata=artifact_metadata,
+        )
+
+
+class BackgroundContext(BaseContext):
+    """
+    Context for AsyncAgent background job execution.
+
+    This context is used for long-running tasks (> 5 min) that execute
+    in the background and post updates to the backend via HTTP.
+
+    Attributes:
+        update_client: BackgroundUpdateClient for POSTing updates (always present)
+        job_id: Background job ID from the backend system (always present)
+        user_id: User ID from request metadata (optional)
+        thread_id: Thread/conversation ID from request metadata (optional)
+        file_access_token: Supabase access token for file operations (optional)
+        metadata: Raw metadata from A2A request
+
+    Example:
+        async def process_message(self, message: str, context: BackgroundContext) -> str:
+            for i in range(10):
+                await context.update_progress(
+                    f"Processing batch {i+1}/10",
+                    progress=(i+1)/10
+                )
+                await process_batch(i)
+
+            await context.add_artifact(
+                name="Final Results",
+                content=json.dumps(results),
+                data_type="application/json"
+            )
+
+            return "All batches processed!"
+    """
+
+    update_client: BackgroundUpdateClient
+    job_id: str
 
     async def update_progress(
         self, message: str, progress: float | None = None, status: str = "working"
@@ -245,14 +306,16 @@ class AsyncContext(MessageContext):
                     f"Processing batch {i+1}/{len(batches)}",
                     progress=(i+1)/len(batches)
                 )
+
+        Note:
+            Updates are POSTed to the backend and persisted in the database.
         """
-        if self._update_client:
-            await self._update_client.post_update(
-                update_type="progress",
-                status_message=message,
-                progress=progress,
-                task_status=status,
-            )
+        await self.update_client.post_update(
+            update_type="progress",
+            status_message=message,
+            progress=progress,
+            task_status=status,
+        )
 
     async def add_artifact(
         self,
@@ -278,17 +341,17 @@ class AsyncContext(MessageContext):
                 content=json.dumps(results),
                 data_type="application/json"
             )
-        """
-        if self._update_client:
-            artifact_data: dict[str, Any] = {
-                "name": name,
-                "content": content,
-                "data_type": data_type,
-                "description": description,
-            }
-            if metadata:
-                artifact_data["metadata"] = metadata
 
-            await self._update_client.post_update(
-                update_type="artifact", artifact_data=artifact_data
-            )
+        Note:
+            Artifacts are POSTed to the backend and persisted in the database.
+        """
+        artifact_data: dict[str, Any] = {
+            "name": name,
+            "content": content,
+            "data_type": data_type,
+            "description": description,
+        }
+        if metadata:
+            artifact_data["metadata"] = metadata
+
+        await self.update_client.post_update(update_type="artifact", artifact_data=artifact_data)

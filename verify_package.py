@@ -31,7 +31,7 @@ def verify_structure() -> bool:
         "tests/test_base.py",
     ]
 
-    missing = []
+    missing: list[str] = []
     for file_path in required_files:
         if not Path(file_path).exists():
             missing.append(file_path)
@@ -56,11 +56,11 @@ def verify_imports() -> bool:
         sys.path.insert(0, str(Path(__file__).parent / "src"))
 
         from health_universe_a2a import (
-            A2AAgent,
+            A2AAgentBase,
             AsyncAgent,
-            AsyncContext,
-            MessageContext,
+            BackgroundContext,
             StreamingAgent,
+            StreamingContext,
             ValidationAccepted,
             ValidationRejected,
         )
@@ -68,11 +68,11 @@ def verify_imports() -> bool:
         print("  ✅ All imports successful!")
 
         # Verify classes are importable
-        print(f"  ✅ A2AAgent: {A2AAgent.__name__}")
+        print(f"  ✅ A2AAgentBase: {A2AAgentBase.__name__}")
         print(f"  ✅ StreamingAgent: {StreamingAgent.__name__}")
         print(f"  ✅ AsyncAgent: {AsyncAgent.__name__}")
-        print(f"  ✅ MessageContext: {MessageContext.__name__}")
-        print(f"  ✅ AsyncContext: {AsyncContext.__name__}")
+        print(f"  ✅ MessageContext: {StreamingContext.__name__}")
+        print(f"  ✅ AsyncContext: {BackgroundContext.__name__}")
         print(f"  ✅ ValidationAccepted: {ValidationAccepted.__name__}")
         print(f"  ✅ ValidationRejected: {ValidationRejected.__name__}")
 

@@ -16,7 +16,7 @@ from typing import Any
 
 from health_universe_a2a import (
     AsyncAgent,
-    AsyncContext,
+    BackgroundContext,
     ValidationAccepted,
     ValidationRejected,
     ValidationResult,
@@ -112,17 +112,17 @@ class BatchDataProcessorAgent(AsyncAgent):
         self.logger.info("Batch Data Processor starting up...")
         self.jobs_processed = 0
 
-    async def on_task_start(self, message: str, context: AsyncContext) -> None:
+    async def on_task_start(self, message: str, context: BackgroundContext) -> None:
         """Log job start."""
         self.jobs_processed += 1
         self.logger.info(f"Starting batch job #{self.jobs_processed} (job_id: {context.job_id})")
 
-    async def on_task_complete(self, message: str, result: str, context: AsyncContext) -> None:
+    async def on_task_complete(self, message: str, result: str, context: BackgroundContext) -> None:
         """Log job completion."""
         self.logger.info(f"Batch job #{self.jobs_processed} completed (job_id: {context.job_id})")
 
     async def on_task_error(
-        self, message: str, error: Exception, context: AsyncContext
+        self, message: str, error: Exception, context: BackgroundContext
     ) -> str | None:
         """Handle job errors with recovery suggestions."""
         self.logger.error(f"Batch job #{self.jobs_processed} failed: {error}")
@@ -136,7 +136,7 @@ class BatchDataProcessorAgent(AsyncAgent):
         # Return None to use default error message
         return None
 
-    async def process_message(self, message: str, context: AsyncContext) -> str:
+    async def process_message(self, message: str, context: BackgroundContext) -> str:
         """
         Process dataset in batches.
 
@@ -171,7 +171,7 @@ class BatchDataProcessorAgent(AsyncAgent):
 
         # Process batches
         processed_rows = 0
-        batch_results = []
+        batch_results: list[dict[str, Any]] = []
 
         for batch_num in range(total_batches):
             # Check for cancellation
@@ -191,7 +191,7 @@ class BatchDataProcessorAgent(AsyncAgent):
             await asyncio.sleep(0.5)  # Simulate work
 
             # Simulate batch result
-            batch_result = {
+            batch_result: dict[str, Any] = {
                 "batch_number": batch_num + 1,
                 "rows_processed": min(batch_size, total_rows - processed_rows),
                 "operation": operation,
@@ -224,7 +224,7 @@ class BatchDataProcessorAgent(AsyncAgent):
             batch_results
         )
 
-        summary = {
+        summary: dict[str, Any] = {
             "job_id": context.job_id,
             "file_uri": file_uri,
             "operation": operation,

@@ -16,8 +16,8 @@ from typing import Any
 
 from health_universe_a2a import (
     AgentSkill,
-    MessageContext,
     StreamingAgent,
+    StreamingContext,
     ValidationAccepted,
     ValidationRejected,
     ValidationResult,
@@ -129,17 +129,17 @@ class DataAnalysisAgent(StreamingAgent):
         self.logger.info("Data Analysis Agent starting up...")
         self.analysis_count = 0
 
-    async def on_task_start(self, message: str, context: MessageContext) -> None:
+    async def on_task_start(self, message: str, context: StreamingContext) -> None:
         """Log task start."""
         self.analysis_count += 1
         self.logger.info(f"Starting analysis #{self.analysis_count} for user {context.user_id}")
 
-    async def on_task_complete(self, message: str, result: str, context: MessageContext) -> None:
+    async def on_task_complete(self, message: str, result: str, context: StreamingContext) -> None:
         """Log task completion."""
         self.logger.info(f"Analysis #{self.analysis_count} completed successfully")
 
     async def on_task_error(
-        self, message: str, error: Exception, context: MessageContext
+        self, message: str, error: Exception, context: StreamingContext
     ) -> str | None:
         """Handle errors gracefully."""
         self.logger.error(f"Analysis #{self.analysis_count} failed: {error}")
@@ -149,7 +149,7 @@ class DataAnalysisAgent(StreamingAgent):
 
         return None  # Use default error message
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         """Analyze the dataset and generate insights."""
 
         # Parse data

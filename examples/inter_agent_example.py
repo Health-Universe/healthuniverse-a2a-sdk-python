@@ -12,11 +12,13 @@ Demonstrates:
 
 import asyncio
 import json
+from collections.abc import Awaitable
 from typing import Any
 
 from health_universe_a2a import (
-    MessageContext,
+    AgentResponse,
     StreamingAgent,
+    StreamingContext,
     ValidationAccepted,
     ValidationRejected,
     ValidationResult,
@@ -69,7 +71,7 @@ class OrchestratorAgent(StreamingAgent):
         except json.JSONDecodeError:
             return ValidationRejected(reason="Request must be valid JSON")
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: StreamingContext) -> str:
         """
         Process request by coordinating multiple agents.
 
@@ -97,7 +99,9 @@ class OrchestratorAgent(StreamingAgent):
 
         return "Unknown command"
 
-    async def _analyze_workflow(self, data: str, options: dict, context: MessageContext) -> str:
+    async def _analyze_workflow(
+        self, data: str, options: dict[str, Any], context: StreamingContext
+    ) -> str:
         """
         Analyze workflow: preprocessor → analyzer → formatter
 
@@ -164,7 +168,9 @@ class OrchestratorAgent(StreamingAgent):
             self.logger.error(f"Analysis workflow failed: {e}")
             return f"Analysis failed: {str(e)}"
 
-    async def _process_workflow(self, data: str, options: dict, context: MessageContext) -> str:
+    async def _process_workflow(
+        self, data: str, options: dict[str, Any], context: StreamingContext
+    ) -> str:
         """
         Process workflow: parallel processors → merger
 
@@ -178,7 +184,7 @@ class OrchestratorAgent(StreamingAgent):
         # Launch parallel calls
         await context.update_progress(f"Processing with {len(processors)} agents...", 0.3)
 
-        tasks = []
+        tasks: list[Awaitable[AgentResponse]] = []
         for processor in processors:
             task = self.call_other_agent(
                 processor,
@@ -189,7 +195,7 @@ class OrchestratorAgent(StreamingAgent):
             tasks.append(task)
 
         # Wait for all with error handling
-        completed_results = []
+        completed_results: list[str] = []
         for i, future in enumerate(asyncio.as_completed(tasks)):
             try:
                 result = await future
@@ -213,7 +219,9 @@ class OrchestratorAgent(StreamingAgent):
 
         return merger_response.text
 
-    async def _transform_workflow(self, data: str, options: dict, context: MessageContext) -> str:
+    async def _transform_workflow(
+        self, data: str, options: dict[str, Any], context: StreamingContext
+    ) -> str:
         """
         Transform workflow: local + remote agents
 

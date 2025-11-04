@@ -1,31 +1,8 @@
-"""A2A Extension type definitions"""
-
-from dataclasses import dataclass
-from typing import Any
+"""A2A Extension type definitions and constants"""
 
 from pydantic import BaseModel
 
-
-@dataclass
-class AgentExtension:
-    """
-    A2A Agent Extension declaration.
-
-    Extensions are capabilities that agents can declare support for
-    in their AgentCard. Common extensions include:
-    - File Access: https://healthuniverse.com/ext/file_access/v1
-    - Background Jobs: https://healthuniverse.com/ext/background_job/v1
-
-    Attributes:
-        uri: URI identifying the extension
-        metadata: Optional metadata about extension support
-    """
-
-    uri: str
-    metadata: dict[str, Any] | None = None
-
-
-# Common extension URIs
+# Common extension URIs for Health Universe platform
 FILE_ACCESS_EXTENSION_URI = "https://healthuniverse.com/ext/file_access/v1"
 BACKGROUND_JOB_EXTENSION_URI = "https://healthuniverse.com/ext/background_job/v1"
 
