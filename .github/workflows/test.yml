@@ -28,7 +28,7 @@ jobs:
         enable-cache: true
 
     - name: Install dependencies
-      run: uv pip install -e ".[dev,server]"
+      run: uv sync --extra dev --extra server
 
     - name: Run tests with coverage
       run: uv run pytest
@@ -55,7 +55,7 @@ jobs:
         enable-cache: true
 
     - name: Install dependencies
-      run: uv pip install -e ".[dev]"
+      run: uv sync --extra dev
 
     - name: Run ruff check
       run: uv run ruff check src/
@@ -79,7 +79,7 @@ jobs:
         enable-cache: true
 
     - name: Install dependencies
-      run: uv pip install -e ".[dev]"
+      run: uv sync --extra dev
 
     - name: Run mypy
       run: uv run mypy src/
