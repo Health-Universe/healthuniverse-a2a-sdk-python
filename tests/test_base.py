@@ -287,7 +287,7 @@ class TestHandleRequestFlow:
             agent.hook_calls.append("process_message")
             raise RuntimeError("Test error")
 
-        agent.process_message = error_process # type: ignore
+        agent.process_message = error_process  # type: ignore
 
         # Should raise the error
         with pytest.raises(RuntimeError, match="Test error"):
@@ -315,7 +315,7 @@ class TestHandleRequestFlow:
             agent.hook_calls.append("process_message")
             raise ValueError("Internal error")
 
-        agent.process_message = error_process
+        agent.process_message = error_process  # type: ignore[method-assign]
 
         # Should raise the error
         with pytest.raises(ValueError):

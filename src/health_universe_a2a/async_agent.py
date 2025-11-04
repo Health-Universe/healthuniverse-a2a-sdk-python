@@ -1,11 +1,12 @@
 """AsyncAgent for long-running tasks"""
 
+import asyncio
 import logging
 import os
 import uuid
 from typing import Any
 
-from a2a.types import Message, Part, Role, TextPart
+from a2a.types import Message, Part, Role, TaskState, TextPart
 
 from health_universe_a2a.base import A2AAgent
 from health_universe_a2a.context import AsyncContext, MessageContext
@@ -27,11 +28,16 @@ class AsyncAgent(A2AAgent[AsyncContext]):
     """
     Agent for long-running tasks (hours) with async job processing.
 
-    Use this agent type when:
-    - Processing takes more than a few minutes
-    - Users don't need to wait for completion
-    - You want to POST updates to backend for persistence
-    - Task duration exceeds typical HTTP/SSE timeout limits
+    **When to Use AsyncAgent:**
+    ✓ Task takes more than 5 minutes
+    ✓ Task might run for hours (up to max_duration_seconds)
+    ✓ Users don't need to wait for completion
+    ✓ You want updates persisted to backend via POST
+    ✓ SSE timeout limits would be exceeded
+
+    **Use StreamingAgent instead if:**
+    ✗ Task completes in under 5 minutes
+    ✗ Users expect real-time streaming feedback
 
     Key differences from StreamingAgent:
     - Validation happens BEFORE job is enqueued
@@ -92,10 +98,81 @@ class AsyncAgent(A2AAgent[AsyncContext]):
 
                 return f"Processed {len(batches)} batches successfully!"
 
-    Note:
-        This is a stub implementation. The actual integration with the A2A SDK
-        (AgentExecutor, EventQueue, etc.) should be implemented based on your
-        specific A2A framework.
+    Implementation Details:
+        - Inherits from A2AAgent and implements AgentExecutor interface
+        - Integrates with a2a-sdk's DefaultRequestHandler and TaskUpdater
+        - Uses BackgroundUpdateClient for POSTing updates to Health Universe backend
+        - SSE connection closes after validation/ack (final=True)
+        - Background processing happens via asyncio.create_task()
+        - HTTP client lifecycle managed in _run_background_work() with proper cleanup
+
+    Background Processing Model:
+        AsyncAgent uses a dual-phase approach to enable long-running tasks:
+
+        **Phase 1: Validation & Acknowledgment (SSE)**
+        1. Request arrives → validate_message() runs immediately
+        2. If rejected: Error sent via SSE, request ends
+        3. If accepted: "Job submitted" message sent via SSE with final=True
+        4. SSE connection closes immediately after ack
+        5. User receives confirmation and can close browser
+
+        **Phase 2: Background Processing (POST)**
+        1. asyncio.create_task() launches _run_background_work() asynchronously
+        2. Task runs independently (not awaited by request handler)
+        3. All progress updates sent via POST to /a2a/task-updates endpoint
+        4. Updates persist in database, survives server restarts
+        5. On completion: Final POST with results
+        6. On error: POST with error details
+
+        **Why asyncio.create_task()?**
+        - Creates independent async task that doesn't block request handler
+        - Task continues running after SSE connection closes
+        - Request handler can return immediately
+        - User doesn't wait for task completion
+
+        **Connection Lifecycle:**
+        - Request: Client → Agent (SSE established)
+        - Validation: Agent validates message
+        - Ack: Agent sends "submitted" + closes SSE (final=True)
+        - Background: Task runs independently, POSTs updates
+        - No timeout: Task can run for hours without connection constraints
+
+    Server Shutdown & Cancellation:
+        **Graceful Shutdown:**
+        - Background tasks created with asyncio.create_task() continue running
+        - If server shuts down: Tasks are cancelled by asyncio event loop
+        - For production: Use proper task tracking and cleanup handlers
+        - Consider: Persistent task queue (Celery, RQ) for critical workloads
+
+        **Cancellation Handling:**
+        AsyncAgent doesn't automatically handle cancellation during shutdown.
+        For cancellation support, check context.is_cancelled() periodically:
+
+        Example:
+            async def process_message(self, message: str, context: AsyncContext) -> str:
+                batches = self.split_data(message, batch_size=100)
+
+                for i, batch in enumerate(batches):
+                    # Check cancellation before each batch
+                    if context.is_cancelled():
+                        await context.update_progress("Cancelled by user", 1.0)
+                        return f"Processing cancelled after {i} batches"
+
+                    await self.process_batch(batch)
+                    await context.update_progress(
+                        f"Processed {i+1}/{len(batches)} batches",
+                        (i+1)/len(batches)
+                    )
+
+                return "All batches processed successfully"
+
+        **Production Recommendations:**
+        1. Implement cancellation checks for long-running loops
+        2. Save intermediate results periodically (checkpoint pattern)
+        3. Use proper error handling with try/except blocks
+        4. Log progress for debugging and monitoring
+        5. Consider using persistent queue systems for critical tasks
+        6. Set reasonable max_duration_seconds to prevent runaway tasks
     """
 
     def supports_streaming(self) -> bool:
@@ -201,9 +278,16 @@ class AsyncAgent(A2AAgent[AsyncContext]):
                     parts=[Part(root=text_part)],
                     metadata=ack_metadata if ack_metadata else None,
                 )
-                await context._updater.submit(message=msg)
+                # Send submitted status and close SSE connection (final=True)
+                # Background processing will continue with POST updates
+                await context._updater.update_status(
+                    state=TaskState.submitted,
+                    message=msg,
+                    final=True,
+                    metadata=ack_metadata if ack_metadata else None,
+                )
 
-            # Step 4: Extract background job params and create POST updater
+            # Step 4: Extract background job params
             if BACKGROUND_JOB_EXTENSION_URI not in metadata:
                 self.logger.error("Background job extension missing - cannot process async")
                 return ack_message
@@ -216,51 +300,27 @@ class AsyncAgent(A2AAgent[AsyncContext]):
             job_id = bg_params.job_id
             api_key = bg_params.api_key
 
-            # Create background update client (POSTs to /a2a/task-updates)
-            update_client = BackgroundUpdateClient(
-                api_key=api_key,
-                job_id=job_id,
-                base_url=os.getenv("BACKGROUND_UPDATE_URL", "https://api.healthuniverse.com"),
+            # Step 5: Launch background task (don't await!)
+            # The SSE connection will close immediately after returning ack_message
+            # Background processing continues with POST updates
+            self.logger.info(
+                f"Launching background task for job_id={job_id}, SSE will close after ack"
             )
 
-            # Create async context with background updater (POST)
-            async_context = AsyncContext(
-                user_id=context.user_id,
-                thread_id=context.thread_id,
-                file_access_token=context.file_access_token,
-                metadata=context.metadata,
-                job_id=job_id,
-                _update_client=update_client,
+            asyncio.create_task(
+                self._run_background_work(
+                    message=message,
+                    job_id=job_id,
+                    api_key=api_key,
+                    metadata=metadata,
+                    user_id=context.user_id,
+                    thread_id=context.thread_id,
+                    file_access_token=context.file_access_token,
+                )
             )
 
-            self.logger.info(f"Starting async processing (job_id={job_id}), updates via POST")
-
-            # Step 5: Call lifecycle hooks and process immediately
-            await self.on_task_start(message, async_context)
-
-            try:
-                # Process immediately with background updater (POST)
-                result = await self.process_message(message, async_context)
-
-                # Call completion hook
-                await self.on_task_complete(message, result, async_context)
-
-                return result
-
-            except Exception as error:
-                # Call error hook
-                custom_error = await self.on_task_error(message, error, async_context)
-                error_msg = custom_error or f"Processing error: {str(error)}"
-
-                # Send error via POST
-                if async_context._update_client:
-                    await async_context._update_client.post_update(
-                        update_type="progress",
-                        status_message=error_msg,
-                        task_status="failed",
-                    )
-
-                raise
+            # Return immediately - SSE connection closes, background processing continues
+            return ack_message
 
         return None
 
@@ -276,64 +336,60 @@ class AsyncAgent(A2AAgent[AsyncContext]):
     async def _run_background_work(
         self,
         message: str,
-        context: AsyncContext,
-        update_client: BackgroundUpdateClient,
+        job_id: str,
+        api_key: str,
+        metadata: dict[str, Any],
+        user_id: str | None = None,
+        thread_id: str | None = None,
+        file_access_token: str | None = None,
     ) -> None:
         """
-        Run async work and POST updates.
+        Run background work with POST updates.
+
+        This method creates the HTTP client and async context, processes the message,
+        and ensures proper cleanup. It's designed to be called with asyncio.create_task()
+        so the SSE connection can close immediately after ack.
 
         Args:
             message: The message to process
-            context: Background context with job info
-            update_client: Client for POSTing updates
+            job_id: Background job ID
+            api_key: API key for POSTing updates to Health Universe backend
+            metadata: Request metadata
+            user_id: Optional user ID from request
+            thread_id: Optional thread ID from request
+            file_access_token: Optional file access token from extensions
         """
+        # Create update client (owns HTTP connection)
+        base_url = os.getenv("BACKGROUND_UPDATE_URL", "https://api.healthuniverse.com")
+        update_client = BackgroundUpdateClient(
+            api_key=api_key,
+            job_id=job_id,
+            base_url=base_url,
+        )
+
         try:
-            # Call agent's process_message
-            final_message = await self.process_message(message, context)
+            # Build async context with POST updater
+            async_context = AsyncContext(
+                user_id=user_id,
+                thread_id=thread_id,
+                file_access_token=file_access_token,
+                metadata=metadata,
+                job_id=job_id,
+                _update_client=update_client,
+            )
+
+            # Process message with POST updates
+            self.logger.info(f"Background processing started for job {job_id}")
+            final_message = await self.process_message(message, async_context)
 
             # POST completion
+            self.logger.info(f"Background processing completed for job {job_id}")
             await update_client.post_completion(final_message)
 
         except Exception as e:
-            self.logger.error(f"Background work failed for job {context.job_id}: {e}")
+            self.logger.error(f"Background work failed for job {job_id}: {e}", exc_info=True)
             await update_client.post_failure(str(e))
 
         finally:
+            # Always close HTTP client to prevent connection leaks
             await update_client.close()
-
-    def _build_background_context(
-        self, request_context: Any, job_id: str, api_key: str
-    ) -> AsyncContext:
-        """
-        Build async context from A2A request context.
-
-        Args:
-            request_context: A2A RequestContext
-            job_id: Async job ID
-            api_key: API key for POSTing updates
-
-        Returns:
-            AsyncContext for agent use
-        """
-        # This would extract metadata from your A2A SDK's RequestContext
-        # Placeholder implementation:
-        metadata: dict[str, Any] = {}
-        file_access_token = None
-
-        # Extract file access token if present
-        if FILE_ACCESS_EXTENSION_URI in metadata:
-            file_access_token = metadata[FILE_ACCESS_EXTENSION_URI].get("access_token")
-
-        # Create update client
-        base_url = os.getenv("HU_LANGGRAPH_URL", "http://localhost:8000")
-        update_client = BackgroundUpdateClient(job_id=job_id, api_key=api_key, base_url=base_url)
-
-        return AsyncContext(
-            job_id=job_id,
-            user_id=metadata.get("user_id"),
-            thread_id=metadata.get("thread_id"),
-            file_access_token=file_access_token,
-            metadata=metadata,
-            _update_client=update_client,
-            _request_context=request_context,
-        )

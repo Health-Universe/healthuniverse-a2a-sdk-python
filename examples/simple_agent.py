@@ -36,8 +36,7 @@ class SimpleEchoAgent(A2AAgent):
         user = context.user_id or "anonymous"
 
         # You can send progress updates during processing
-        if context._updater:
-            await context.update_progress("Processing your message...", 0.5)
+        await context.update_progress("Processing your message...", 0.5)
 
         # Return the final response
         return f"Hello {user}! You said: {message}"

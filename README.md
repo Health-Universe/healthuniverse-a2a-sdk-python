@@ -264,6 +264,77 @@ def get_supported_output_formats(self) -> list[str]:
     return ["text/plain", "application/json"]
 ```
 
+### Declaring Agent Skills
+
+Skills allow you to declare specific capabilities your agent provides in granular detail. Unlike the general agent description, skills define individual functions with their own input/output formats, examples, and tags.
+
+**When to use skills:**
+- Your agent performs multiple distinct operations (e.g., analyze, transform, visualize)
+- You want fine-grained capability discovery
+- Different operations have different input/output requirements
+- You want to provide specific examples for each capability
+
+**Example:**
+
+```python
+from health_universe_a2a import StreamingAgent, AgentSkill
+
+class DataProcessorAgent(StreamingAgent):
+    def get_agent_name(self) -> str:
+        return "Data Processor"
+
+    def get_agent_description(self) -> str:
+        return "Analyzes and visualizes numerical datasets"
+
+    def get_agent_skills(self) -> list[AgentSkill]:
+        """Declare specific skills this agent provides."""
+        return [
+            AgentSkill(
+                id="statistical_analysis",
+                name="Statistical Analysis",
+                description="Performs comprehensive statistical analysis on numerical datasets",
+                tags=["statistics", "analytics", "data-science"],
+                input_modes=["application/json"],
+                output_modes=["application/json", "text/markdown"],
+                examples=["[1, 2, 3, 4, 5]", "[10.5, 20.3, 30.1]"],
+            ),
+            AgentSkill(
+                id="data_visualization",
+                name="Data Visualization",
+                description="Generates histogram and other visualization data",
+                tags=["visualization", "charts", "histogram"],
+                input_modes=["application/json"],
+                output_modes=["application/json"],
+                examples=["[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"],
+            ),
+            AgentSkill(
+                id="report_generation",
+                name="Report Generation",
+                description="Creates human-readable analysis reports",
+                tags=["reporting", "documentation", "markdown"],
+                input_modes=["application/json"],
+                output_modes=["text/markdown"],
+                examples=["[100, 200, 300]"],
+            ),
+        ]
+
+    async def process_message(self, message: str, context: MessageContext) -> str:
+        # Your implementation can route based on message content
+        # or handle all skills in one unified flow
+        return "Processing complete"
+```
+
+**Skill Properties:**
+- **id**: Unique identifier for the skill (kebab-case recommended)
+- **name**: Human-readable name displayed in UIs
+- **description**: What this specific skill does
+- **tags**: Keywords for discovery and categorization
+- **input_modes**: MIME types this skill accepts (optional, inherits from agent defaults)
+- **output_modes**: MIME types this skill produces (optional, inherits from agent defaults)
+- **examples**: Sample inputs showing how to use this skill
+
+**Note:** Skills are declared in the agent card and visible to clients, but the SDK doesn't automatically route messages to specific skills. Your `process_message()` implementation determines how to handle different operations.
+
 ## Examples
 
 See the `examples/` directory for complete working examples:
@@ -336,6 +407,69 @@ async def process_message(self, message: str, context: MessageContext) -> str:
 
     return "All items processed!"
 ```
+
+### Inter-Agent Communication
+
+Call other A2A-compliant agents from your agent's processing logic:
+
+```python
+from health_universe_a2a import StreamingAgent, MessageContext
+
+class OrchestratorAgent(StreamingAgent):
+    async def process_message(self, message: str, context: MessageContext) -> str:
+        # Call local agent (bypasses ingress/egress)
+        preprocessor_response = await self.call_other_agent(
+            "/preprocessor",  # Local agent path
+            message,
+            context,
+            timeout=30.0,
+        )
+
+        # Call with structured data
+        analysis_response = await self.call_other_agent_with_data(
+            "/analyzer",
+            {
+                "data": preprocessor_response.text,
+                "mode": "detailed",
+            },
+            context,
+            timeout=60.0,
+        )
+
+        # Call remote agent with HTTPS
+        remote_response = await self.call_other_agent(
+            "https://api.example.com/validator",
+            analysis_response.text,
+            context,
+            timeout=120.0,
+        )
+
+        return remote_response.text
+```
+
+**Agent Identifier Formats:**
+
+1. **Local agent path**: `/agent-name` → Uses `LOCAL_AGENT_BASE_URL` (default: `http://localhost:8501`)
+2. **Direct URL**: `https://...` → Calls directly with HTTPS
+3. **Registry name**: `agent-name` → Looks up in `AGENT_REGISTRY` environment variable
+
+**Environment Variables:**
+
+```bash
+# Base URL for local agents
+export LOCAL_AGENT_BASE_URL="http://localhost:8501"
+
+# Agent registry (JSON map)
+export AGENT_REGISTRY='{"analyzer": "https://api.example.com/analyzer", "validator": "https://validator.svc.cluster.local"}'
+```
+
+**Features:**
+- **Automatic JWT propagation**: User context flows through agent calls
+- **Retry logic**: Exponential backoff for transient errors (5xx, timeouts)
+- **Structured data**: Use `call_other_agent_with_data()` for JSON/dict payloads
+- **Parallel calls**: Use `asyncio.gather()` for concurrent agent calls
+
+See [examples/inter_agent_example.py](examples/inter_agent_example.py) for comprehensive patterns including parallel processing and error handling.
 
 ## Architecture
 

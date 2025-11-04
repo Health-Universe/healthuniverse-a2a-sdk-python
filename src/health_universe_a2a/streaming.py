@@ -1,7 +1,6 @@
 """StreamingAgent for short-running, streaming tasks"""
 
 import logging
-from typing import Any
 
 from health_universe_a2a.base import A2AAgent
 from health_universe_a2a.context import MessageContext
@@ -14,11 +13,16 @@ class StreamingAgent(A2AAgent[MessageContext]):
     """
     Agent for short-running tasks (< 5 min) with SSE streaming updates.
 
-    Use this agent type when:
-    - Users expect immediate feedback
-    - Processing takes seconds to a few minutes
-    - You want to stream progress updates via A2A protocol (SSE)
-    - Task can complete within typical HTTP/SSE timeout limits
+    **When to Use StreamingAgent:**
+    ✓ Task completes in seconds to a few minutes (< 5 min)
+    ✓ Users expect immediate, real-time feedback
+    ✓ You want to stream progress updates live via SSE
+    ✓ Task duration fits within HTTP/SSE timeout limits
+
+    **Use AsyncAgent instead if:**
+    ✗ Task takes more than 5 minutes
+    ✗ Task might run for hours
+    ✗ SSE connection timeouts are a concern
 
     The agent automatically:
     - Enables streaming in the agent card
@@ -51,10 +55,13 @@ class StreamingAgent(A2AAgent[MessageContext]):
 
                 return "Analysis complete!"
 
-    Note:
-        This is a stub implementation. The actual integration with the A2A SDK
-        (AgentExecutor, EventQueue, etc.) should be implemented based on your
-        specific A2A framework.
+    Implementation Details:
+        - Inherits from A2AAgent and implements AgentExecutor interface
+        - Integrates with a2a-sdk's DefaultRequestHandler and TaskUpdater
+        - Updates streamed in real-time via SSE (Server-Sent Events)
+        - Connection remains open throughout processing
+        - Completion sent via TaskUpdater.complete() when done
+        - Best for tasks completing within typical HTTP/SSE timeout (~5 minutes)
     """
 
     def supports_streaming(self) -> bool:
@@ -70,41 +77,3 @@ class StreamingAgent(A2AAgent[MessageContext]):
             extensions.append(AgentExtension(uri=FILE_ACCESS_EXTENSION_URI))
 
         return extensions
-
-    # The actual execute() method would integrate with your A2A SDK here
-    # This would handle:
-    # 1. Extracting message from RequestContext
-    # 2. Running validation
-    # 3. Creating TaskUpdater for streaming
-    # 4. Calling process_message()
-    # 5. Streaming updates via EventQueue
-    # 6. Handling errors and completion
-
-    def _build_message_context(self, request_context: Any, updater: Any) -> MessageContext:
-        """
-        Build simplified context from A2A request context.
-
-        Args:
-            request_context: A2A RequestContext
-            updater: TaskUpdater for streaming updates
-
-        Returns:
-            MessageContext for agent use
-        """
-        # This would extract metadata from your A2A SDK's RequestContext
-        # Placeholder implementation:
-        metadata: dict[str, Any] = {}
-        file_access_token = None
-
-        # Extract file access token if present
-        if FILE_ACCESS_EXTENSION_URI in metadata:
-            file_access_token = metadata[FILE_ACCESS_EXTENSION_URI].get("access_token")
-
-        return MessageContext(
-            user_id=metadata.get("user_id"),
-            thread_id=metadata.get("thread_id"),
-            file_access_token=file_access_token,
-            metadata=metadata,
-            _updater=updater,
-            _request_context=request_context,
-        )

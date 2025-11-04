@@ -71,8 +71,9 @@ def create_app(agent: A2AAgent, task_store: Any | None = None) -> Any:
     if task_store is None:
         task_store = InMemoryTaskStore()
 
-    # Create request handler
-    request_handler = DefaultRequestHandler(agent_executor=agent, task_store=task_store)  # type: ignore[arg-type]
+    # A2AAgent now directly implements AgentExecutor interface
+    # Pass agent directly to DefaultRequestHandler
+    request_handler = DefaultRequestHandler(agent_executor=agent, task_store=task_store)
 
     # Build Starlette app with A2A endpoints
     app = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler).build()
@@ -135,8 +136,12 @@ def serve(
 
     # Configuration from environment with overrides
     actual_host = host if host is not None else os.getenv("HOST", "0.0.0.0")
-    actual_port = port if port is not None else int(os.getenv("PORT", os.getenv("AGENT_PORT", "8000")))
-    actual_reload: bool = reload if reload is not None else os.getenv("RELOAD", "false").lower() == "true"
+    actual_port = (
+        port if port is not None else int(os.getenv("PORT", os.getenv("AGENT_PORT", "8000")))
+    )
+    actual_reload: bool = (
+        reload if reload is not None else os.getenv("RELOAD", "false").lower() == "true"
+    )
 
     # Create the app
     app = create_app(agent, task_store=task_store)
