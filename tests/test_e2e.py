@@ -8,8 +8,9 @@ import asyncio
 import multiprocessing
 import socket
 import time
+from collections.abc import Generator
 from contextlib import closing
-from typing import Any, Generator
+from typing import Any
 
 import httpx
 import pytest

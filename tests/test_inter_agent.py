@@ -16,13 +16,7 @@ class TestAgentResponse:
 
     def test_text_property_single_text_part(self) -> None:
         """Should extract text from single text part."""
-        raw = {
-            "message": {
-                "parts": [
-                    {"kind": "text", "text": "Hello World"}
-                ]
-            }
-        }
+        raw = {"message": {"parts": [{"kind": "text", "text": "Hello World"}]}}
         response = AgentResponse(raw)
         assert response.text == "Hello World"
 
@@ -33,7 +27,7 @@ class TestAgentResponse:
                 "parts": [
                     {"kind": "text", "text": "Line 1"},
                     {"kind": "text", "text": "Line 2"},
-                    {"kind": "text", "text": "Line 3"}
+                    {"kind": "text", "text": "Line 3"},
                 ]
             }
         }
@@ -42,19 +36,13 @@ class TestAgentResponse:
 
     def test_text_property_empty_response(self) -> None:
         """Should return empty string for response without text parts."""
-        raw = {"message": {"parts": []}}
+        raw: dict[str, Any] = {"message": {"parts": []}}
         response = AgentResponse(raw)
         assert response.text == ""
 
     def test_text_property_caching(self) -> None:
         """Should cache text property for performance."""
-        raw = {
-            "message": {
-                "parts": [
-                    {"kind": "text", "text": "Cached"}
-                ]
-            }
-        }
+        raw = {"message": {"parts": [{"kind": "text", "text": "Cached"}]}}
         response = AgentResponse(raw)
 
         # First access
@@ -68,38 +56,20 @@ class TestAgentResponse:
     def test_data_property_extracts_first_data_part(self) -> None:
         """Should extract data from first data part."""
         test_data = {"key": "value", "number": 42}
-        raw = {
-            "message": {
-                "parts": [
-                    {"kind": "data", "data": test_data}
-                ]
-            }
-        }
+        raw = {"message": {"parts": [{"kind": "data", "data": test_data}]}}
         response = AgentResponse(raw)
         assert response.data == test_data
 
     def test_data_property_returns_none_when_no_data(self) -> None:
         """Should return None when no data parts exist."""
-        raw = {
-            "message": {
-                "parts": [
-                    {"kind": "text", "text": "Just text"}
-                ]
-            }
-        }
+        raw = {"message": {"parts": [{"kind": "text", "text": "Just text"}]}}
         response = AgentResponse(raw)
         assert response.data is None
 
     def test_data_property_caching(self) -> None:
         """Should cache data property for performance."""
         test_data = {"cached": True}
-        raw = {
-            "message": {
-                "parts": [
-                    {"kind": "data", "data": test_data}
-                ]
-            }
-        }
+        raw = {"message": {"parts": [{"kind": "data", "data": test_data}]}}
         response = AgentResponse(raw)
 
         # First access
@@ -117,7 +87,7 @@ class TestAgentResponse:
                 "parts": [
                     {"kind": "text", "text": "Hello"},
                     {"kind": "data", "data": {"x": 1}},
-                    {"kind": "text", "text": "World"}
+                    {"kind": "text", "text": "World"},
                 ]
             }
         }
@@ -131,19 +101,13 @@ class TestAgentResponse:
 
     def test_parts_property_empty_response(self) -> None:
         """Should return empty list for response without parts."""
-        raw = {"message": {"parts": []}}
+        raw: dict[str, Any] = {"message": {"parts": []}}
         response = AgentResponse(raw)
         assert response.parts == []
 
     def test_str_method_returns_text(self) -> None:
         """String representation should return text property."""
-        raw = {
-            "message": {
-                "parts": [
-                    {"kind": "text", "text": "String output"}
-                ]
-            }
-        }
+        raw = {"message": {"parts": [{"kind": "text", "text": "String output"}]}}
         response = AgentResponse(raw)
         assert str(response) == "String output"
 
@@ -151,10 +115,7 @@ class TestAgentResponse:
         """Repr should show text and data for debugging."""
         raw = {
             "message": {
-                "parts": [
-                    {"kind": "text", "text": "Text"},
-                    {"kind": "data", "data": {"x": 1}}
-                ]
+                "parts": [{"kind": "text", "text": "Text"}, {"kind": "data", "data": {"x": 1}}]
             }
         }
         response = AgentResponse(raw)
@@ -171,16 +132,14 @@ class TestInterAgentClientURLResolution:
     def test_resolve_local_agent_path(self) -> None:
         """Should resolve /path to local base URL."""
         client = InterAgentClient(
-            agent_identifier="/processor",
-            local_base_url="http://localhost:8501"
+            agent_identifier="/processor", local_base_url="http://localhost:8501"
         )
         assert client.target_url == "http://localhost:8501/processor"
 
     def test_resolve_local_agent_path_with_trailing_slash(self) -> None:
         """Should handle base URL with trailing slash."""
         client = InterAgentClient(
-            agent_identifier="/analyzer",
-            local_base_url="http://localhost:8501/"
+            agent_identifier="/analyzer", local_base_url="http://localhost:8501/"
         )
         assert client.target_url == "http://localhost:8501/analyzer"
 
@@ -200,12 +159,9 @@ class TestInterAgentClientURLResolution:
         """Should resolve agent name from registry."""
         registry = {
             "data-processor": "https://processor.example.com",
-            "analyzer": "https://analyzer.example.com"
+            "analyzer": "https://analyzer.example.com",
         }
-        client = InterAgentClient(
-            agent_identifier="data-processor",
-            agent_registry=registry
-        )
+        client = InterAgentClient(agent_identifier="data-processor", agent_registry=registry)
         assert client.target_url == "https://processor.example.com"
 
     def test_resolve_unregistered_agent_name_raises_error(self) -> None:
@@ -213,26 +169,22 @@ class TestInterAgentClientURLResolution:
         registry = {"known-agent": "https://example.com"}
 
         with pytest.raises(ValueError) as exc_info:
-            InterAgentClient(
-                agent_identifier="unknown-agent",
-                agent_registry=registry
-            )
+            InterAgentClient(agent_identifier="unknown-agent", agent_registry=registry)
 
         assert "Could not resolve agent identifier 'unknown-agent'" in str(exc_info.value)
         assert "AGENT_REGISTRY" in str(exc_info.value)
 
     def test_load_agent_registry_from_env(self) -> None:
         """Should load agent registry from AGENT_REGISTRY environment variable."""
-        registry_json = json.dumps({
-            "agent1": "https://agent1.example.com",
-            "agent2": "https://agent2.example.com"
-        })
+        registry_json = json.dumps(
+            {"agent1": "https://agent1.example.com", "agent2": "https://agent2.example.com"}
+        )
 
         with patch.dict(os.environ, {"AGENT_REGISTRY": registry_json}):
             registry = InterAgentClient._load_agent_registry()
             assert registry == {
                 "agent1": "https://agent1.example.com",
-                "agent2": "https://agent2.example.com"
+                "agent2": "https://agent2.example.com",
             }
 
     def test_load_agent_registry_empty_env(self) -> None:
@@ -360,9 +312,7 @@ class TestInterAgentClientRetryLogic:
             mock_client_class.return_value = mock_client
 
             response = await client._call_with_retry(
-                "POST",
-                "http://example.com/test",
-                json={"test": "data"}
+                "POST", "http://example.com/test", json={"test": "data"}
             )
 
             assert response.status_code == 200
@@ -375,7 +325,7 @@ class TestInterAgentClientRetryLogic:
             agent_identifier="/test",
             timeout=10.0,
             max_retries=2,
-            retry_backoff_base=0.01  # Fast retry for tests
+            retry_backoff_base=0.01,  # Fast retry for tests
         )
 
         mock_success_response = MagicMock()
@@ -389,15 +339,13 @@ class TestInterAgentClientRetryLogic:
             # First attempt: timeout, second attempt: success
             mock_client.request.side_effect = [
                 httpx.TimeoutException("Timeout"),
-                mock_success_response
+                mock_success_response,
             ]
 
             mock_client_class.return_value = mock_client
 
             response = await client._call_with_retry(
-                "POST",
-                "http://example.com/test",
-                json={"test": "data"}
+                "POST", "http://example.com/test", json={"test": "data"}
             )
 
             assert response.status_code == 200
@@ -410,7 +358,7 @@ class TestInterAgentClientRetryLogic:
             agent_identifier="/test",
             timeout=10.0,
             max_retries=2,
-            retry_backoff_base=0.01  # Fast retry for tests
+            retry_backoff_base=0.01,  # Fast retry for tests
         )
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -423,9 +371,7 @@ class TestInterAgentClientRetryLogic:
 
             with pytest.raises(httpx.TimeoutException):
                 await client._call_with_retry(
-                    "POST",
-                    "http://example.com/test",
-                    json={"test": "data"}
+                    "POST", "http://example.com/test", json={"test": "data"}
                 )
 
             # Should try initial + 2 retries = 3 total
@@ -434,11 +380,7 @@ class TestInterAgentClientRetryLogic:
     @pytest.mark.asyncio
     async def test_call_with_retry_no_retry_for_4xx(self) -> None:
         """Should not retry 4xx errors."""
-        client = InterAgentClient(
-            agent_identifier="/test",
-            timeout=10.0,
-            max_retries=2
-        )
+        client = InterAgentClient(agent_identifier="/test", timeout=10.0, max_retries=2)
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -452,9 +394,7 @@ class TestInterAgentClientRetryLogic:
 
             with pytest.raises(httpx.HTTPStatusError):
                 await client._call_with_retry(
-                    "POST",
-                    "http://example.com/test",
-                    json={"test": "data"}
+                    "POST", "http://example.com/test", json={"test": "data"}
                 )
 
             # Should only try once (no retries for 4xx)
@@ -467,16 +407,11 @@ class TestInterAgentClientCalls:
     @pytest.mark.asyncio
     async def test_call_sends_text_message(self) -> None:
         """Should send text message with correct A2A format."""
-        client = InterAgentClient(
-            agent_identifier="https://example.com/agent",
-            timeout=10.0
-        )
+        client = InterAgentClient(agent_identifier="https://example.com/agent", timeout=10.0)
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "message": {
-                "parts": [{"kind": "text", "text": "Response text"}]
-            }
+            "message": {"parts": [{"kind": "text", "text": "Response text"}]}
         }
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -506,14 +441,12 @@ class TestInterAgentClientCalls:
         """Should use custom timeout when provided."""
         client = InterAgentClient(
             agent_identifier="https://example.com/agent",
-            timeout=30.0  # Default timeout
+            timeout=30.0,  # Default timeout
         )
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "message": {
-                "parts": [{"kind": "text", "text": "Response"}]
-            }
+            "message": {"parts": [{"kind": "text", "text": "Response"}]}
         }
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -531,18 +464,13 @@ class TestInterAgentClientCalls:
     @pytest.mark.asyncio
     async def test_call_with_data_sends_structured_data(self) -> None:
         """Should send structured data with DataPart."""
-        client = InterAgentClient(
-            agent_identifier="https://example.com/agent",
-            timeout=10.0
-        )
+        client = InterAgentClient(agent_identifier="https://example.com/agent", timeout=10.0)
 
         test_data = {"query": "test", "limit": 10, "filters": ["a", "b"]}
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "message": {
-                "parts": [{"kind": "data", "data": {"result": "success"}}]
-            }
+            "message": {"parts": [{"kind": "data", "data": {"result": "success"}}]}
         }
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -569,14 +497,12 @@ class TestInterAgentClientCalls:
         client = InterAgentClient(
             agent_identifier="https://example.com/agent",
             auth_token="jwt-token-abc123",
-            timeout=10.0
+            timeout=10.0,
         )
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "message": {
-                "parts": [{"kind": "text", "text": "Authenticated response"}]
-            }
+            "message": {"parts": [{"kind": "text", "text": "Authenticated response"}]}
         }
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -596,16 +522,12 @@ class TestInterAgentClientCalls:
     async def test_call_without_auth_token(self) -> None:
         """Should not include Authorization header when no auth_token."""
         client = InterAgentClient(
-            agent_identifier="https://example.com/agent",
-            auth_token=None,
-            timeout=10.0
+            agent_identifier="https://example.com/agent", auth_token=None, timeout=10.0
         )
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "message": {
-                "parts": [{"kind": "text", "text": "Public response"}]
-            }
+            "message": {"parts": [{"kind": "text", "text": "Public response"}]}
         }
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -640,18 +562,14 @@ class TestInterAgentClientIntegration:
                 auth_token="test-jwt-token",
                 timeout=10.0,
                 max_retries=1,
-                retry_backoff_base=0.01
+                retry_backoff_base=0.01,
             )
 
             assert client.target_url == "http://localhost:8501/calculator"
 
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "message": {
-                    "parts": [
-                        {"kind": "text", "text": "Result: 42"}
-                    ]
-                }
+                "message": {"parts": [{"kind": "text", "text": "Result: 42"}]}
             }
 
             with patch("httpx.AsyncClient") as mock_client_class:
@@ -672,16 +590,15 @@ class TestInterAgentClientIntegration:
     @pytest.mark.asyncio
     async def test_end_to_end_registry_agent_call(self) -> None:
         """Should successfully call registry agent end-to-end."""
-        registry_json = json.dumps({
-            "data-processor": "https://processor.healthuniverse.com",
-            "analyzer": "https://analyzer.healthuniverse.com"
-        })
+        registry_json = json.dumps(
+            {
+                "data-processor": "https://processor.healthuniverse.com",
+                "analyzer": "https://analyzer.healthuniverse.com",
+            }
+        )
 
         with patch.dict(os.environ, {"AGENT_REGISTRY": registry_json}):
-            client = InterAgentClient(
-                agent_identifier="data-processor",
-                timeout=10.0
-            )
+            client = InterAgentClient(agent_identifier="data-processor", timeout=10.0)
 
             assert client.target_url == "https://processor.healthuniverse.com"
 
@@ -689,11 +606,7 @@ class TestInterAgentClientIntegration:
 
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "message": {
-                    "parts": [
-                        {"kind": "data", "data": {"mean": 2.0, "sum": 6}}
-                    ]
-                }
+                "message": {"parts": [{"kind": "data", "data": {"mean": 2.0, "sum": 6}}]}
             }
 
             with patch("httpx.AsyncClient") as mock_client_class:
