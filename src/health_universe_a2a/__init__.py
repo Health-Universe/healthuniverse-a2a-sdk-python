@@ -23,7 +23,12 @@ from health_universe_a2a.context import BackgroundContext, BaseContext, Streamin
 from health_universe_a2a.inter_agent import AgentResponse, InterAgentClient
 
 # Server utilities (optional - requires server extra)
-from health_universe_a2a.server import create_app, serve
+from health_universe_a2a.server import (
+    create_app,
+    create_multi_agent_app,
+    serve,
+    serve_multi_agents,
+)
 from health_universe_a2a.streaming import StreamingAgent
 
 # Validation types
@@ -55,7 +60,9 @@ __all__ = [
     "AgentResponse",
     # Server utilities
     "create_app",
+    "create_multi_agent_app",
     "serve",
+    "serve_multi_agents",
     # A2A protocol types
     "AgentCard",
     "AgentProvider",
