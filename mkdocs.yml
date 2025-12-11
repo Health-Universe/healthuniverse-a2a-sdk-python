@@ -1,0 +1,67 @@
+site_name: Health Universe A2A SDK
+site_description: Python SDK for building A2A-compliant agents on the Health Universe platform
+site_url: https://health-universe.github.io/healthuniverse-a2a-sdk-python/
+repo_url: https://github.com/Health-Universe/healthuniverse-a2a-sdk-python
+repo_name: Health-Universe/healthuniverse-a2a-sdk-python
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+  - Guides:
+    - Streaming Agents: guides/streaming-agents.md
+    - Background Jobs: guides/background-jobs.md
+    - Storage: guides/storage.md
+    - Inter-Agent Communication: guides/inter-agent.md
+  - API Reference:
+    - Agents: api/agents.md
+    - Context: api/context.md
+    - Storage: api/storage.md
+    - Extensions: api/extensions.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - toc:
+      permalink: true
