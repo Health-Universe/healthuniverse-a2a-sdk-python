@@ -1,5 +1,7 @@
 """Context objects passed to agent process_message methods"""
 
+import asyncio
+import logging
 import os
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -9,10 +11,17 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Part, Role, TaskState, TextPart
 from pydantic import BaseModel, ConfigDict, Field
 
+from health_universe_a2a.types.extensions import (
+    HU_LOG_LEVEL_EXTENSION_URI,
+    UpdateImportance,
+)
 from health_universe_a2a.update_client import BackgroundUpdateClient
 
 if TYPE_CHECKING:
     from health_universe_a2a.inter_agent import InterAgentClient
+    from health_universe_a2a.storage import StorageBackend
+
+logger = logging.getLogger(__name__)
 
 
 class BaseContext(BaseModel):
@@ -24,9 +33,10 @@ class BaseContext(BaseModel):
     Attributes:
         user_id: User ID from request metadata (optional, may not be present)
         thread_id: Thread/conversation ID from request metadata (optional)
-        file_access_token: Supabase access token for file operations (optional)
+        file_access_token: Access token for file operations via NestJS API (optional)
         auth_token: JWT token from original request for inter-agent calls (optional)
         metadata: Raw metadata from A2A request
+        extensions: List of extension URIs from the request message (optional)
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -36,6 +46,7 @@ class BaseContext(BaseModel):
     file_access_token: str | None = None
     auth_token: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    extensions: list[str] | None = None
     _cancelled: bool = False
 
     def is_cancelled(self) -> bool:
@@ -127,11 +138,13 @@ class StreamingContext(BaseContext):
     Attributes:
         updater: TaskUpdater instance for sending SSE updates (always present)
         request_context: Original A2A RequestContext (always present)
+        storage: Optional StorageBackend for file operations
         user_id: User ID from request metadata (optional)
         thread_id: Thread/conversation ID from request metadata (optional)
-        file_access_token: Supabase access token for file operations (optional)
+        file_access_token: Access token for file operations (optional)
         auth_token: JWT token from original request for inter-agent calls (optional)
         metadata: Raw metadata from A2A request
+        extensions: List of extension URIs from the request message (optional)
 
     Example:
         async def process_message(self, message: str, context: StreamingContext) -> str:
@@ -152,9 +165,14 @@ class StreamingContext(BaseContext):
 
     updater: TaskUpdater
     request_context: RequestContext
+    storage: "StorageBackend | None" = None
 
     async def update_progress(
-        self, message: str, progress: float | None = None, status: str = "working"
+        self,
+        message: str,
+        progress: float | None = None,
+        status: str = "working",
+        importance: UpdateImportance = UpdateImportance.INFO,
     ) -> None:
         """
         Send a progress update to the UI via A2A protocol (SSE).
@@ -163,10 +181,16 @@ class StreamingContext(BaseContext):
             message: Status message to display
             progress: Progress from 0.0 to 1.0 (optional)
             status: Task status (default: "working")
+            importance: Update importance level (default: INFO).
+                Only NOTICE and ERROR are pushed to Navigator UI.
 
         Example:
             await context.update_progress("Loading data...", 0.2)
-            await context.update_progress("Processing...", 0.5)
+            await context.update_progress(
+                "Critical milestone!",
+                0.5,
+                importance=UpdateImportance.NOTICE
+            )
 
         Note:
             Updates are streamed live via SSE to the client.
@@ -175,6 +199,8 @@ class StreamingContext(BaseContext):
         metadata: dict[str, Any] = {}
         if progress is not None:
             metadata["progress"] = progress
+        # Add importance to metadata for log level extension
+        metadata[HU_LOG_LEVEL_EXTENSION_URI] = {"importance": importance.value}
 
         # Create A2A Message object
         text_part = TextPart(text=message)
@@ -261,10 +287,12 @@ class BackgroundContext(BaseContext):
     Attributes:
         update_client: BackgroundUpdateClient for POSTing updates (always present)
         job_id: Background job ID from the backend system (always present)
+        loop: Event loop for sync updates from ThreadPoolExecutor (optional)
         user_id: User ID from request metadata (optional)
         thread_id: Thread/conversation ID from request metadata (optional)
-        file_access_token: Supabase access token for file operations (optional)
+        file_access_token: Access token for file operations (optional)
         metadata: Raw metadata from A2A request
+        extensions: List of extension URIs from the request message (optional)
 
     Example:
         async def process_message(self, message: str, context: BackgroundContext) -> str:
@@ -286,9 +314,14 @@ class BackgroundContext(BaseContext):
 
     update_client: BackgroundUpdateClient
     job_id: str
+    loop: Any | None = None  # asyncio event loop for sync updates
 
     async def update_progress(
-        self, message: str, progress: float | None = None, status: str = "working"
+        self,
+        message: str,
+        progress: float | None = None,
+        status: str = "working",
+        importance: UpdateImportance = UpdateImportance.INFO,
     ) -> None:
         """
         Send a progress update (POSTed to backend).
@@ -299,23 +332,87 @@ class BackgroundContext(BaseContext):
             message: Status message
             progress: Progress from 0.0 to 1.0 (optional)
             status: Task status (default: "working")
+            importance: Update importance level (default: INFO).
+                Only NOTICE and ERROR are pushed to Navigator UI in real-time.
 
         Example:
             for i, batch in enumerate(batches):
                 await context.update_progress(
                     f"Processing batch {i+1}/{len(batches)}",
-                    progress=(i+1)/len(batches)
+                    progress=(i+1)/len(batches),
+                    importance=UpdateImportance.INFO
                 )
+
+            # Important milestone - will show in Navigator
+            await context.update_progress(
+                "Analysis complete!",
+                progress=1.0,
+                importance=UpdateImportance.NOTICE
+            )
 
         Note:
             Updates are POSTed to the backend and persisted in the database.
         """
+        # Include importance in the update
         await self.update_client.post_update(
             update_type="progress",
             status_message=message,
             progress=progress,
             task_status=status,
+            importance=importance,
         )
+
+    def update_progress_sync(
+        self,
+        message: str,
+        progress: float | None = None,
+        status: str = "working",
+        importance: UpdateImportance = UpdateImportance.INFO,
+    ) -> None:
+        """
+        Synchronous wrapper for update_progress.
+
+        Use this when running in a ThreadPoolExecutor or other synchronous context.
+        Requires that the `loop` attribute was set when creating the context.
+
+        Args:
+            message: Status message
+            progress: Progress from 0.0 to 1.0 (optional)
+            status: Task status (default: "working")
+            importance: Update importance level (default: INFO)
+
+        Example:
+            def cpu_intensive_work(context: BackgroundContext, data):
+                for i, chunk in enumerate(data):
+                    context.update_progress_sync(
+                        f"Processing chunk {i+1}/{len(data)}",
+                        progress=i/len(data)
+                    )
+                    process_chunk(chunk)
+
+            # Call from async code
+            with ThreadPoolExecutor() as executor:
+                await loop.run_in_executor(
+                    executor, cpu_intensive_work, context, data
+                )
+
+        Note:
+            This method schedules the async update on the event loop and
+            waits for it to complete (with a 10 second timeout).
+        """
+        if self.loop is None:
+            logger.warning("No event loop available for sync status update")
+            return
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self.update_progress(message, progress, status, importance),
+                self.loop,
+            )
+            # Wait for completion with timeout
+            future.result(timeout=10.0)
+        except Exception as e:
+            logger.error(f"Failed to update progress from thread: {e}")
 
     async def add_artifact(
         self,
@@ -355,3 +452,37 @@ class BackgroundContext(BaseContext):
             artifact_data["metadata"] = metadata
 
         await self.update_client.post_update(update_type="artifact", artifact_data=artifact_data)
+
+    def add_artifact_sync(
+        self,
+        name: str,
+        content: str,
+        data_type: str = "text/plain",
+        description: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Synchronous wrapper for add_artifact.
+
+        Use this when running in a ThreadPoolExecutor or other synchronous context.
+        Requires that the `loop` attribute was set when creating the context.
+
+        Args:
+            name: Artifact name
+            content: Artifact content
+            data_type: MIME type
+            description: Optional description
+            metadata: Optional metadata dict
+        """
+        if self.loop is None:
+            logger.warning("No event loop available for sync artifact add")
+            return
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self.add_artifact(name, content, data_type, description, metadata),
+                self.loop,
+            )
+            future.result(timeout=30.0)
+        except Exception as e:
+            logger.error(f"Failed to add artifact from thread: {e}")
