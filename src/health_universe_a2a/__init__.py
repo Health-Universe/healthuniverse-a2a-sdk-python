@@ -20,7 +20,15 @@ from health_universe_a2a.base import A2AAgentBase
 from health_universe_a2a.context import BackgroundContext, BaseContext, StreamingContext
 
 # Inter-agent communication
-from health_universe_a2a.inter_agent import AgentResponse, InterAgentClient
+from health_universe_a2a.inter_agent import (
+    AgentRegistry,
+    AgentResponse,
+    InterAgentClient,
+    get_agent_registry,
+)
+
+# NestJS client for S3 storage
+from health_universe_a2a.nest_client import NestJSClient
 
 # Server utilities (optional - requires server extra)
 from health_universe_a2a.server import (
@@ -29,7 +37,33 @@ from health_universe_a2a.server import (
     serve,
     serve_multi_agents,
 )
+
+# Storage utilities
+from health_universe_a2a.storage import (
+    LocalStorageBackend,
+    S3StorageBackend,
+    StorageBackend,
+    create_storage_backend,
+    directory_context,
+    storage_context,
+)
 from health_universe_a2a.streaming import StreamingAgent
+
+# Extension types and constants
+from health_universe_a2a.types.extensions import (
+    BACKGROUND_JOB_EXTENSION_URI,
+    FILE_ACCESS_EXTENSION_URI,
+    FILE_ACCESS_EXTENSION_URI_V2,
+    HU_LOG_LEVEL_EXTENSION_URI,
+    BackgroundJobExtensionParams,
+    BackgroundJobExtensionResponse,
+    BackgroundTaskResults,
+    FileAccessExtensionContext,
+    FileAccessExtensionParams,
+    UpdateImportance,
+    ack_background_job_enqueued,
+    notify_on_task_completion,
+)
 
 # Validation types
 from health_universe_a2a.types.validation import (
@@ -38,7 +72,15 @@ from health_universe_a2a.types.validation import (
     ValidationResult,
 )
 
-__version__ = "0.1.0"
+# Update client utilities
+from health_universe_a2a.update_client import (
+    BackgroundArtifactQueue,
+    BackgroundTaskUpdater,
+    BackgroundUpdateClient,
+    create_background_updater,
+)
+
+__version__ = "0.2.0"
 
 __all__ = [
     # Agent classes
@@ -53,11 +95,39 @@ __all__ = [
     "ValidationAccepted",
     "ValidationRejected",
     "ValidationResult",
-    # Extension types
+    # Extension types and constants
     "AgentExtension",
+    "FILE_ACCESS_EXTENSION_URI",
+    "FILE_ACCESS_EXTENSION_URI_V2",
+    "BACKGROUND_JOB_EXTENSION_URI",
+    "HU_LOG_LEVEL_EXTENSION_URI",
+    "UpdateImportance",
+    "FileAccessExtensionParams",
+    "FileAccessExtensionContext",
+    "BackgroundJobExtensionParams",
+    "BackgroundJobExtensionResponse",
+    "BackgroundTaskResults",
+    "ack_background_job_enqueued",
+    "notify_on_task_completion",
     # Inter-agent communication
     "InterAgentClient",
     "AgentResponse",
+    "AgentRegistry",
+    "get_agent_registry",
+    # Storage utilities
+    "StorageBackend",
+    "LocalStorageBackend",
+    "S3StorageBackend",
+    "create_storage_backend",
+    "storage_context",
+    "directory_context",
+    # NestJS client
+    "NestJSClient",
+    # Update client utilities
+    "BackgroundUpdateClient",
+    "BackgroundArtifactQueue",
+    "BackgroundTaskUpdater",
+    "create_background_updater",
     # Server utilities
     "create_app",
     "create_multi_agent_app",

@@ -1,6 +1,6 @@
 [project]
 name = "health-universe-a2a"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python SDK for building Health Universe A2A-compliant agents"
 authors = [
     { name = "Health Universe", email = "support@healthuniverse.com" }
@@ -36,6 +36,11 @@ dev = [
     "pytest-cov>=4.1.0",
     "mypy>=1.8.0",
     "ruff>=0.3.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
 ]
 
 [project.urls]
