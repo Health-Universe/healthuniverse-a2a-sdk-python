@@ -5,12 +5,189 @@ import json
 import logging
 import os
 import uuid
+from pathlib import Path
 from typing import Any
 
 import httpx
 from a2a.types import DataPart, Message, Part, Role, TextPart
 
 logger = logging.getLogger(__name__)
+
+
+class AgentRegistry:
+    """
+    Registry for resolving agent names to URLs.
+
+    Supports loading from:
+    - Environment variable (AGENT_REGISTRY as JSON string)
+    - Configuration file (AGENT_REGISTRY_PATH as path to JSON file)
+
+    Example config file (agents.json):
+        {
+            "agents": {
+                "protocol_orchestrator": {
+                    "url": "http://localhost:8010",
+                    "name": "Protocol Orchestrator"
+                },
+                "section_writer": {
+                    "url": "http://localhost:8002",
+                    "name": "Section Writer"
+                }
+            }
+        }
+
+    Example usage:
+        registry = AgentRegistry()
+        url = registry.resolve_url("section_writer")
+        # Returns: "http://localhost:8002"
+    """
+
+    def __init__(self, registry_path: str | None = None):
+        """
+        Initialize agent registry.
+
+        Args:
+            registry_path: Path to agents.json file. If not provided, checks
+                AGENT_REGISTRY_PATH environment variable.
+        """
+        self.registry_path = registry_path or os.getenv("AGENT_REGISTRY_PATH")
+        self._cache: dict[str, Any] | None = None
+        self._flat_cache: dict[str, str] | None = None
+
+    def load(self) -> dict[str, Any]:
+        """
+        Load and cache registry configuration.
+
+        Tries in order:
+        1. Registry file at registry_path or AGENT_REGISTRY_PATH
+        2. AGENT_REGISTRY environment variable (JSON string)
+        3. Empty dict if neither available
+
+        Returns:
+            Registry configuration dict
+        """
+        if self._cache is not None:
+            return self._cache
+
+        # Try loading from file
+        if self.registry_path:
+            path = Path(self.registry_path)
+            if path.exists():
+                try:
+                    with open(path) as f:
+                        self._cache = json.load(f)
+                        logger.debug(f"Loaded agent registry from {path}")
+                        return self._cache
+                except Exception as e:
+                    logger.warning(f"Failed to load agent registry from {path}: {e}")
+
+        # Try loading from environment variable
+        registry_json = os.getenv("AGENT_REGISTRY")
+        if registry_json:
+            try:
+                self._cache = json.loads(registry_json)
+                logger.debug("Loaded agent registry from AGENT_REGISTRY env var")
+                return self._cache
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse AGENT_REGISTRY env var: {e}")
+
+        # Return empty dict
+        self._cache = {}
+        return self._cache
+
+    def _build_flat_registry(self) -> dict[str, str]:
+        """Build flat agent_name -> URL mapping from config."""
+        if self._flat_cache is not None:
+            return self._flat_cache
+
+        config = self.load()
+        self._flat_cache = {}
+
+        # Handle nested agents structure
+        if "agents" in config:
+            for name, info in config["agents"].items():
+                if isinstance(info, dict) and "url" in info:
+                    self._flat_cache[name] = info["url"]
+                elif isinstance(info, str):
+                    self._flat_cache[name] = info
+        # Handle flat structure
+        elif isinstance(config, dict):
+            for name, value in config.items():
+                if isinstance(value, str):
+                    self._flat_cache[name] = value
+                elif isinstance(value, dict) and "url" in value:
+                    self._flat_cache[name] = value["url"]
+
+        return self._flat_cache
+
+    def resolve_url(self, agent_name: str) -> str:
+        """
+        Resolve agent name to URL.
+
+        Args:
+            agent_name: Name of the agent to resolve
+
+        Returns:
+            URL for the agent
+
+        Raises:
+            ValueError: If agent name not found in registry
+        """
+        registry = self._build_flat_registry()
+
+        if agent_name in registry:
+            return registry[agent_name]
+
+        raise ValueError(
+            f"Agent '{agent_name}' not found in registry. "
+            f"Available agents: {list(registry.keys())}"
+        )
+
+    def clear_cache(self) -> None:
+        """Clear cached registry data (useful for testing or reloading)."""
+        self._cache = None
+        self._flat_cache = None
+
+    def get_agent_info(self, agent_name: str) -> dict[str, Any]:
+        """
+        Get full agent info (url, name, description, etc.).
+
+        Args:
+            agent_name: Name of the agent
+
+        Returns:
+            Agent info dict with at least 'url' key
+
+        Raises:
+            ValueError: If agent not found
+        """
+        config = self.load()
+
+        if "agents" in config and agent_name in config["agents"]:
+            info = config["agents"][agent_name]
+            if isinstance(info, str):
+                return {"url": info}
+            return dict(info) if isinstance(info, dict) else {"url": str(info)}
+
+        if agent_name in config:
+            info = config[agent_name]
+            if isinstance(info, str):
+                return {"url": info}
+            return dict(info) if isinstance(info, dict) else {"url": str(info)}
+
+        raise ValueError(f"Agent '{agent_name}' not found in registry")
+
+
+# Global registry instance
+_global_registry: AgentRegistry | None = None
+
+
+def get_agent_registry() -> AgentRegistry:
+    """Get or create global agent registry instance."""
+    global _global_registry
+    if _global_registry is None:
+        _global_registry = AgentRegistry()
+    return _global_registry
 
 
 class AgentResponse:
@@ -199,6 +376,44 @@ class InterAgentClient:
             logger.warning(f"Failed to parse AGENT_REGISTRY: {e}")
             return {}
 
+    @classmethod
+    def from_registry(
+        cls,
+        agent_name: str,
+        auth_token: str | None = None,
+        timeout: float = 30.0,
+        max_retries: int = 3,
+    ) -> "InterAgentClient":
+        """
+        Create client from registry lookup.
+
+        Convenient factory method that resolves agent name using the global registry.
+
+        Args:
+            agent_name: Name of agent to call (must be in registry)
+            auth_token: Optional JWT token to propagate
+            timeout: Request timeout in seconds
+            max_retries: Max retry attempts for transient errors
+
+        Returns:
+            Configured InterAgentClient
+
+        Raises:
+            ValueError: If agent name not found in registry
+
+        Example:
+            client = InterAgentClient.from_registry("section_writer")
+            response = await client.call("Generate section 1")
+        """
+        registry = get_agent_registry()
+        url = registry.resolve_url(agent_name)
+        return cls(
+            agent_identifier=url,
+            auth_token=auth_token,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+
     def _resolve_target_url(self) -> str:
         """
         Resolve agent identifier to target URL.
@@ -219,7 +434,14 @@ class InterAgentClient:
         if identifier.startswith(("http://", "https://")):
             return identifier
 
-        # Agent name: lookup in registry
+        # Agent name: lookup in registry (using global registry)
+        try:
+            registry = get_agent_registry()
+            return registry.resolve_url(identifier)
+        except ValueError:
+            pass
+
+        # Also check legacy flat registry
         if identifier in self.agent_registry:
             return self.agent_registry[identifier]
 
