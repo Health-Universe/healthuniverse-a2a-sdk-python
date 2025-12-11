@@ -13,13 +13,15 @@ from health_universe_a2a.base import A2AAgentBase
 from health_universe_a2a.context import BackgroundContext, StreamingContext
 from health_universe_a2a.types.extensions import (
     BACKGROUND_JOB_EXTENSION_URI,
-    FILE_ACCESS_EXTENSION_URI,
+    FILE_ACCESS_EXTENSION_URI_V2,
 )
 from health_universe_a2a.types.validation import (
     ValidationAccepted,
     ValidationRejected,
 )
-from health_universe_a2a.update_client import BackgroundUpdateClient
+from health_universe_a2a.update_client import (
+    BackgroundUpdateClient,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -190,9 +192,9 @@ class AsyncAgent(A2AAgentBase):
             AgentExtension(uri=BACKGROUND_JOB_EXTENSION_URI)
         ]
 
-        # Add file access if needed
+        # Add file access v2 if needed
         if self.requires_file_access():
-            extensions.append(AgentExtension(uri=FILE_ACCESS_EXTENSION_URI))
+            extensions.append(AgentExtension(uri=FILE_ACCESS_EXTENSION_URI_V2))
 
         return extensions
 
@@ -406,15 +408,22 @@ class AsyncAgent(A2AAgentBase):
                 f"Launching background task for job_id={job_id}, SSE will close after ack"
             )
 
+            # Get task_id and context_id for background updater
+            task_id = context.request_context.task_id or str(uuid.uuid4())
+            context_id = context.request_context.context_id or str(uuid.uuid4())
+
             asyncio.create_task(
                 self._run_background_work(
                     message=message,
                     job_id=job_id,
                     api_key=api_key,
                     metadata=metadata,
+                    task_id=task_id,
+                    context_id=context_id,
                     user_id=context.user_id,
                     thread_id=context.thread_id,
                     file_access_token=context.file_access_token,
+                    extensions=context.extensions,
                 )
             )
 
@@ -438,9 +447,12 @@ class AsyncAgent(A2AAgentBase):
         job_id: str,
         api_key: str,
         metadata: dict[str, Any],
+        task_id: str,
+        context_id: str,
         user_id: str | None = None,
         thread_id: str | None = None,
         file_access_token: str | None = None,
+        extensions: list[str] | None = None,
     ) -> None:
         """
         Run background work with POST updates.
@@ -454,10 +466,16 @@ class AsyncAgent(A2AAgentBase):
             job_id: Background job ID
             api_key: API key for POSTing updates to Health Universe backend
             metadata: Request metadata
+            task_id: Task ID for A2A protocol
+            context_id: Context ID for A2A protocol
             user_id: Optional user ID from request
             thread_id: Optional thread ID from request
             file_access_token: Optional file access token from extensions
+            extensions: Optional list of extension URIs from message
         """
+        # Get the current event loop for sync updates from ThreadPoolExecutor
+        loop = asyncio.get_event_loop()
+
         # Create update client (owns HTTP connection)
         base_url = os.getenv("BACKGROUND_UPDATE_URL", "https://api.healthuniverse.com")
         update_client = BackgroundUpdateClient(
@@ -475,8 +493,10 @@ class AsyncAgent(A2AAgentBase):
                 thread_id=thread_id,
                 file_access_token=file_access_token,
                 metadata=metadata,
+                extensions=extensions,
                 job_id=job_id,
                 update_client=update_client,
+                loop=loop,  # Enable sync updates from ThreadPoolExecutor
             )
 
             # Get timeout from agent configuration

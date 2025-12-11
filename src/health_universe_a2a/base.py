@@ -23,8 +23,11 @@ from a2a.types import (
 )
 
 from health_universe_a2a.context import BaseContext, StreamingContext
-from health_universe_a2a.inter_agent import AgentResponse
-from health_universe_a2a.types.extensions import FILE_ACCESS_EXTENSION_URI
+from health_universe_a2a.inter_agent import AgentResponse, InterAgentClient
+from health_universe_a2a.types.extensions import (
+    FILE_ACCESS_EXTENSION_URI,
+    FILE_ACCESS_EXTENSION_URI_V2,
+)
 from health_universe_a2a.types.validation import (
     ValidationAccepted,
     ValidationResult,
@@ -173,12 +176,22 @@ class A2AAgentBase(AgentExecutor, ABC):
             if "thread_id" in metadata:
                 thread_id = metadata["thread_id"]
 
-            # Extract file access token from extensions
+            # Extract file access token from extensions (v2 preferred, v1 fallback)
             file_access_token = None
-            if FILE_ACCESS_EXTENSION_URI in metadata:
+            if FILE_ACCESS_EXTENSION_URI_V2 in metadata:
+                file_ext_data = metadata[FILE_ACCESS_EXTENSION_URI_V2]
+                if isinstance(file_ext_data, dict):
+                    file_access_token = file_ext_data.get("access_token")
+            elif FILE_ACCESS_EXTENSION_URI in metadata:
+                # Legacy v1 fallback
                 file_ext_data = metadata[FILE_ACCESS_EXTENSION_URI]
                 if isinstance(file_ext_data, dict):
                     file_access_token = file_ext_data.get("access_token")
+
+            # Extract extensions list from message
+            extensions = None
+            if context.message and hasattr(context.message, "extensions"):
+                extensions = context.message.extensions
 
             # Extract JWT auth token for inter-agent calls
             # Check common locations where the token might be stored
@@ -200,6 +213,7 @@ class A2AAgentBase(AgentExecutor, ABC):
                 file_access_token=file_access_token,
                 auth_token=auth_token,
                 metadata=metadata,
+                extensions=extensions,
                 updater=updater,
                 request_context=context,
             )
@@ -645,6 +659,138 @@ class A2AAgentBase(AgentExecutor, ABC):
         return "You are a helpful AI assistant."
 
     # Inter-agent communication
+
+    async def call_agent(
+        self,
+        agent_name_or_url: str,
+        message: str | dict | list | Any,
+        context: BaseContext | None = None,
+        timeout: float = 30.0,
+    ) -> Any:
+        """
+        Unified method to call another A2A agent.
+
+        This method handles all message types (string, dict, list) and
+        automatically parses the response. It matches the pattern used
+        in the example agent repos.
+
+        Args:
+            agent_name_or_url: Target agent - can be:
+                - Agent name (resolved via registry)
+                - Full URL (http://... or https://...)
+                - Local path (/processor - resolved to local base URL)
+            message: Message to send - can be:
+                - String: sent as TextPart
+                - Dict/List: sent as DataPart
+                - Pre-formatted with 'parts': sent as-is
+            context: Optional context for JWT propagation
+            timeout: Request timeout in seconds (default: 30s)
+
+        Returns:
+            Parsed response data. Returns the most useful form:
+            - For artifact responses: the artifact data/content
+            - For message responses: the message text or data part
+            - Falls back to raw response if parsing fails
+
+        Example:
+            # Call with text message
+            result = await self.call_agent("section_writer", "Write section 1")
+
+            # Call with structured data
+            result = await self.call_agent(
+                "processor",
+                {"document_path": "/path/to/doc.pdf"}
+            )
+
+            # Call with context for JWT propagation
+            result = await self.call_agent(
+                "analyzer",
+                {"query": "analyze"},
+                context=context,
+                timeout=60.0
+            )
+        """
+        # Create client with registry support
+        auth_token = context.auth_token if context else None
+
+        if agent_name_or_url.startswith(("http://", "https://", "/")):
+            # Direct URL or local path
+            client = InterAgentClient(
+                agent_identifier=agent_name_or_url,
+                auth_token=auth_token,
+                timeout=timeout,
+            )
+        else:
+            # Registry lookup
+            client = InterAgentClient.from_registry(
+                agent_name=agent_name_or_url,
+                auth_token=auth_token,
+                timeout=timeout,
+            )
+
+        try:
+            # Determine message type and call appropriately
+            if isinstance(message, str):
+                response = await client.call(message, timeout=timeout)
+            else:
+                response = await client.call_with_data(message, timeout=timeout)
+
+            # Parse and return the most useful form
+            return self._parse_agent_response(response)
+        finally:
+            await client.close()
+
+    def _parse_agent_response(self, response: AgentResponse) -> Any:
+        """
+        Parse agent response into most useful form.
+
+        Handles multiple response formats:
+        1. Artifact with artifactId and parts
+        2. Full response with artifacts array
+        3. Direct data at root level
+        4. Message with text parts
+
+        Args:
+            response: AgentResponse from inter-agent call
+
+        Returns:
+            Parsed data in most useful form
+        """
+        raw = response.raw_response
+
+        # Case 1: Artifact with artifactId and parts (common pattern)
+        if isinstance(raw, dict):
+            if "artifactId" in raw and "parts" in raw:
+                parts = raw["parts"]
+                if parts and isinstance(parts, list):
+                    first_part = parts[0]
+                    if isinstance(first_part, dict) and "data" in first_part:
+                        return first_part["data"]
+                    if isinstance(first_part, dict) and "text" in first_part:
+                        return first_part["text"]
+
+            # Case 2: Full response with artifacts array
+            if "artifacts" in raw:
+                artifacts = raw["artifacts"]
+                if artifacts and isinstance(artifacts, list):
+                    first_artifact = artifacts[0]
+                    if isinstance(first_artifact, dict) and "parts" in first_artifact:
+                        parts = first_artifact["parts"]
+                        if parts:
+                            first_part = parts[0]
+                            if isinstance(first_part, dict) and "data" in first_part:
+                                return first_part["data"]
+
+            # Case 3: Data at root (direct structured response)
+            if response.data is not None:
+                return response.data
+
+        # Case 4: Text response
+        if response.text:
+            return response.text
+
+        # Fallback: return raw response
+        return raw
 
     async def call_other_agent(
         self,
