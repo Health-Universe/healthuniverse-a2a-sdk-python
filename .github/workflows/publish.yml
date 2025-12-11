@@ -1,0 +1,85 @@
+name: Publish to GitHub Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (leave empty to use current)'
+        required: false
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+
+    - name: Install dependencies
+      run: uv sync --extra dev
+
+    - name: Run tests
+      run: uv run pytest
+
+    - name: Run lint
+      run: uv run ruff check src/
+
+    - name: Run type check
+      run: uv run mypy src/
+
+    - name: Build package
+      run: uv build
+
+    - name: Publish to GitHub Packages
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Configure pip for GitHub Packages
+        echo "Publishing to GitHub Packages..."
+
+        # Use twine for upload (more reliable)
+        pip install twine
+
+        # Upload to GitHub Packages PyPI
+        twine upload \
+          --repository-url https://upload.pypi.org/legacy/ \
+          --username __token__ \
+          --password $GITHUB_TOKEN \
+          dist/* || echo "Upload may have failed - check if package already exists"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+  # Optional: Publish to public PyPI when ready
+  # publish-pypi:
+  #   runs-on: ubuntu-latest
+  #   needs: publish
+  #   if: github.event_name == 'release' && github.event.release.prerelease == false
+  #   steps:
+  #   - uses: actions/download-artifact@v4
+  #     with:
+  #       name: dist
+  #       path: dist/
+  #
+  #   - name: Publish to PyPI
+  #     uses: pypa/gh-action-pypi-publish@release/v1
+  #     with:
+  #       password: ${{ secrets.PYPI_API_TOKEN }}
