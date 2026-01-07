@@ -1,38 +1,40 @@
 """Tests for base A2AAgent class"""
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from health_universe_a2a import (
-    StreamingAgent,
-    StreamingContext,
+    Agent,
+    AgentContext,
     ValidationAccepted,
     ValidationRejected,
 )
 from health_universe_a2a.types.validation import ValidationResult
+from health_universe_a2a.update_client import BackgroundUpdateClient
 
 
 # Helper function to create a test context with mocks
-def create_test_context() -> StreamingContext:
-    """Create a StreamingContext with mock updater and request_context for testing."""
-    updater = MagicMock()
-    updater.update_status = AsyncMock()
-    updater.reject = AsyncMock()
-    updater.add_artifact = AsyncMock()
-    updater.complete = AsyncMock()
-
-    request_context = MagicMock()
+def create_test_context() -> AgentContext:
+    """Create an AgentContext with mock update_client for testing."""
+    update_client = MagicMock(spec=BackgroundUpdateClient)
+    update_client.post_update = AsyncMock()
+    update_client.post_completion = AsyncMock()
+    update_client.post_failure = AsyncMock()
+    update_client.close = AsyncMock()
 
     # Use model_construct to bypass Pydantic validation for tests
-    return StreamingContext.model_construct(
-        updater=updater,
-        request_context=request_context,
+    return AgentContext.model_construct(
+        update_client=update_client,
+        job_id="test-job-123",
+        user_id="test-user",
+        thread_id="test-thread",
+        file_access_token="test-token",
     )
 
 
-class TestAgent(StreamingAgent):
+class TestAgent(Agent):
     """Simple test agent for testing base functionality."""
 
     def get_agent_name(self) -> str:
@@ -41,12 +43,12 @@ class TestAgent(StreamingAgent):
     def get_agent_description(self) -> str:
         return "An agent for testing"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         return f"Processed: {message}"
 
 
 class TestA2AAgentBase:
-    """Tests for A2AAgentBase (via StreamingAgent)."""
+    """Tests for A2AAgentBase (via Agent)."""
 
     def test_agent_initialization(self) -> None:
         """Agent should initialize without errors."""
@@ -58,11 +60,6 @@ class TestA2AAgentBase:
         """Agent should have default version 1.0.0."""
         agent = TestAgent()
         assert agent.get_agent_version() == "1.0.0"
-
-    def test_default_file_access(self) -> None:
-        """Agent should not require file access by default."""
-        agent = TestAgent()
-        assert agent.requires_file_access() is False
 
     def test_default_supported_formats(self) -> None:
         """Agent should support text/plain and application/json by default."""
@@ -109,7 +106,7 @@ class TestA2AAgentBase:
         assert error_msg is None  # Default returns None
 
 
-class TestAgentWithCustomValidation(StreamingAgent):
+class TestAgentWithCustomValidation(Agent):
     """Test agent with custom validation."""
 
     def get_agent_name(self) -> str:
@@ -124,7 +121,7 @@ class TestAgentWithCustomValidation(StreamingAgent):
 
         return ValidationAccepted(estimated_duration_seconds=10)
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         return "processed"
 
 
@@ -150,33 +147,8 @@ class TestCustomValidation:
         assert result.estimated_duration_seconds == 10
 
 
-class TestAgentWithFileAccess(StreamingAgent):
-    """Test agent that requires file access."""
-
-    def get_agent_name(self) -> str:
-        return "File Access Agent"
-
-    def get_agent_description(self) -> str:
-        return "Needs file access"
-
-    def requires_file_access(self) -> bool:
-        return True
-
-    async def process_message(self, message: str, context: StreamingContext) -> str:
-        return "processed"
-
-
-class TestFileAccessConfiguration:
-    """Tests for file access configuration."""
-
-    def test_file_access_can_be_enabled(self) -> None:
-        """Agent should be able to require file access."""
-        agent = TestAgentWithFileAccess()
-        assert agent.requires_file_access() is True
-
-
 # Test agent with lifecycle hooks for testing
-class TestAgentWithHooks(StreamingAgent):
+class TestAgentWithHooks(Agent):
     """Test agent that tracks lifecycle hook calls."""
 
     def __init__(self) -> None:
@@ -189,180 +161,24 @@ class TestAgentWithHooks(StreamingAgent):
     def get_agent_description(self) -> str:
         return "Tests lifecycle hooks"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         self.hook_calls.append("process_message")
         return f"Processed: {message}"
 
-    async def on_task_start(self, message: str, context: StreamingContext) -> None:
+    async def on_task_start(self, message: str, context: AgentContext) -> None:
         self.hook_calls.append("on_task_start")
 
-    async def on_task_complete(self, message: str, result: str, context: StreamingContext) -> None:
+    async def on_task_complete(self, message: str, result: str, context: AgentContext) -> None:
         self.hook_calls.append("on_task_complete")
 
     async def on_task_error(
-        self, message: str, error: Exception, context: StreamingContext
+        self, message: str, error: Exception, context: AgentContext
     ) -> str | None:
         self.hook_calls.append("on_task_error")
         return f"Custom error: {str(error)}"
 
 
-class TestAgentThatErrors(StreamingAgent):
-    """Test agent that raises an error during processing."""
-
-    def get_agent_name(self) -> str:
-        return "Error Agent"
-
-    def get_agent_description(self) -> str:
-        return "Always errors"
-
-    async def process_message(self, message: str, context: StreamingContext) -> str:
-        raise ValueError("Processing failed!")
-
-
-class TestHandleRequestFlow:
-    """Tests for handle_request() orchestration."""
-
-    @pytest.mark.asyncio
-    async def test_handle_request_with_rejection(self) -> None:
-        """handle_request should handle validation rejection properly."""
-        agent = TestAgentWithCustomValidation()
-        context = create_test_context()
-
-        # Mock the updater - return immediately to avoid Message creation
-        mock_updater = AsyncMock()
-        context.updater = mock_updater
-
-        # Short message should be rejected
-        result = await agent.handle_request("hi", context, {})
-
-        # Should return None for rejection
-        assert result is None
-
-        # Should have called reject on the updater
-        mock_updater.reject.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_handle_request_with_acceptance(self) -> None:
-        """handle_request should process accepted messages."""
-        agent = TestAgentWithCustomValidation()
-        context = create_test_context()
-        context.updater = AsyncMock()
-
-        # Long message should be accepted and processed
-        result = await agent.handle_request("hello world", context, {})
-
-        # Should return the processed result
-        assert result == "processed"
-
-        # Should NOT have called reject
-        context.updater.reject.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_handle_request_calls_lifecycle_hooks_in_order(self) -> None:
-        """handle_request should call lifecycle hooks in correct order."""
-        agent = TestAgentWithHooks()
-        context = create_test_context()
-
-        result = await agent.handle_request("test message", context, {})
-
-        # Verify result
-        assert result == "Processed: test message"
-
-        # Verify hooks were called in order
-        assert agent.hook_calls == [
-            "on_task_start",
-            "process_message",
-            "on_task_complete",
-        ]
-
-    @pytest.mark.asyncio
-    async def test_handle_request_with_processing_error(self) -> None:
-        """handle_request should handle processing errors."""
-        agent = TestAgentThatErrors()
-        context = create_test_context()
-
-        # Patch the update_progress method at the class level
-        with patch(
-            "health_universe_a2a.context.StreamingContext.update_progress", new=AsyncMock()
-        ) as mock_update:
-            # Should raise the error
-            with pytest.raises(ValueError, match="Processing failed!"):
-                await agent.handle_request("test", context, {})
-
-            # Should have sent error update
-            mock_update.assert_called_once()
-            call_args = mock_update.call_args
-            # Check first positional argument (message) and keyword argument (status)
-            message = (
-                call_args.args[0] if len(call_args.args) > 0 else call_args.kwargs.get("message")
-            )
-            status = call_args.kwargs.get("status")
-            assert message is not None
-            assert "Processing failed!" in message
-            assert status == "error"
-
-    @pytest.mark.asyncio
-    async def test_handle_request_calls_error_hook(self) -> None:
-        """handle_request should call on_task_error when processing fails."""
-        agent = TestAgentWithHooks()
-        context = create_test_context()
-        context.updater = AsyncMock()
-
-        # Make process_message raise an error
-        _ = agent.process_message
-
-        async def error_process(message: str, context: StreamingContext) -> str:
-            agent.hook_calls.append("process_message")
-            raise RuntimeError("Test error")
-
-        agent.process_message = error_process  # type: ignore
-
-        # Should raise the error
-        with pytest.raises(RuntimeError, match="Test error"):
-            await agent.handle_request("test", context, {})
-
-        # Verify error hook was called
-        assert "on_task_error" in agent.hook_calls
-
-        # Verify hooks were called in order
-        assert agent.hook_calls == [
-            "on_task_start",
-            "process_message",
-            "on_task_error",
-        ]
-
-    @pytest.mark.asyncio
-    async def test_handle_request_uses_custom_error_message(self) -> None:
-        """handle_request should use custom error message from on_task_error."""
-        agent = TestAgentWithHooks()
-        context = create_test_context()
-
-        # Make process_message raise an error
-        async def error_process(message: str, context: StreamingContext) -> str:
-            agent.hook_calls.append("process_message")
-            raise ValueError("Internal error")
-
-        agent.process_message = error_process  # type: ignore[method-assign]
-
-        # Patch the update_progress method at the class level
-        with patch(
-            "health_universe_a2a.context.StreamingContext.update_progress", new=AsyncMock()
-        ) as mock_update:
-            # Should raise the error
-            with pytest.raises(ValueError):
-                await agent.handle_request("test", context, {})
-
-            # Should have sent custom error message
-            mock_update.assert_called_once()
-            call_args = mock_update.call_args
-            # Check first positional argument (message)
-            message = (
-                call_args.args[0] if len(call_args.args) > 0 else call_args.kwargs.get("message")
-            )
-            assert message == "Custom error: Internal error"
-
-
-class TestAgentWithCustomConfig(StreamingAgent):
+class TestAgentWithCustomConfig(Agent):
     """Test agent with custom configuration."""
 
     def get_agent_name(self) -> str:
@@ -386,10 +202,7 @@ class TestAgentWithCustomConfig(StreamingAgent):
     def get_provider_url(self) -> str:
         return "https://test.example.com"
 
-    def requires_file_access(self) -> bool:
-        return True
-
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         return "processed"
 
 
@@ -447,9 +260,9 @@ class TestAgentCardCreation:
         card = agent.create_agent_card()
 
         assert card.capabilities is not None
-        # TestAgent inherits from StreamingAgent, so streaming is True
-        assert card.capabilities.streaming is True
-        assert card.capabilities.push_notifications is False
+        # Agent (AsyncAgent) does NOT support streaming, supports push notifications
+        assert card.capabilities.streaming is False
+        assert card.capabilities.push_notifications is True
 
     def test_agent_card_url_configuration(self) -> None:
         """AgentCard should include URL from agent configuration."""
@@ -462,6 +275,17 @@ class TestAgentCardCreation:
         assert len(card.additional_interfaces) > 0
         assert card.additional_interfaces[0].transport == "JSONRPC"
 
+    def test_agent_card_extensions(self) -> None:
+        """AgentCard should include auto-configured extensions."""
+        agent = TestAgent()
+        card = agent.create_agent_card()
+
+        # Agent (AsyncAgent) automatically configures background job and file access extensions
+        assert card.capabilities is not None
+        extensions = card.capabilities.extensions
+        assert extensions is not None
+        assert len(extensions) >= 2  # background_job and file_access_v2
+
 
 class TestContextIntegration:
     """Tests for context integration."""
@@ -470,24 +294,34 @@ class TestContextIntegration:
     async def test_process_message_can_use_context(self) -> None:
         """Agent should be able to use context during processing."""
 
-        class ContextUsingAgent(StreamingAgent):
+        class ContextUsingAgent(Agent):
             def get_agent_name(self) -> str:
                 return "Context Agent"
 
             def get_agent_description(self) -> str:
                 return "Uses context"
 
-            async def process_message(self, message: str, context: StreamingContext) -> str:
+            async def process_message(self, message: str, context: AgentContext) -> str:
                 # Verify context is passed and accessible
                 assert context is not None
                 # Test accessing context attributes
                 _ = context.user_id
                 _ = context.metadata
+                _ = context.job_id
                 return "Done!"
 
         agent = ContextUsingAgent()
         context = create_test_context()
 
-        result = await agent.handle_request("test", context, {})
+        result = await agent.process_message("test", context)
 
         assert result == "Done!"
+
+    @pytest.mark.asyncio
+    async def test_context_update_progress(self) -> None:
+        """Context should allow progress updates."""
+        context = create_test_context()
+
+        await context.update_progress("Working...", 0.5)
+
+        context.update_client.post_update.assert_called_once()  # type: ignore[union-attr]

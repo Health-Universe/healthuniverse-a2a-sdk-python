@@ -15,15 +15,14 @@ import json
 from typing import Any
 
 from health_universe_a2a import (
-    AsyncAgent,
-    BackgroundContext,
+    Agent,
+    AgentContext,
     ValidationAccepted,
     ValidationRejected,
-    ValidationResult,
 )
 
 
-class BatchDataProcessorAgent(AsyncAgent):
+class BatchDataProcessorAgent(Agent):
     """
     Complex batch processor demonstrating advanced AsyncAgent features.
 
@@ -56,7 +55,9 @@ class BatchDataProcessorAgent(AsyncAgent):
         """Allow up to 2 hours for batch processing."""
         return 7200
 
-    async def validate_message(self, message: str, metadata: dict[str, Any]) -> ValidationResult:
+    async def validate_message(
+        self, message: str, metadata: dict[str, Any]
+    ) -> ValidationAccepted | ValidationRejected:
         """
         Validate job parameters before processing.
 
@@ -112,17 +113,17 @@ class BatchDataProcessorAgent(AsyncAgent):
         self.logger.info("Batch Data Processor starting up...")
         self.jobs_processed = 0
 
-    async def on_task_start(self, message: str, context: BackgroundContext) -> None:
+    async def on_task_start(self, message: str, context: AgentContext) -> None:
         """Log job start."""
         self.jobs_processed += 1
         self.logger.info(f"Starting batch job #{self.jobs_processed} (job_id: {context.job_id})")
 
-    async def on_task_complete(self, message: str, result: str, context: BackgroundContext) -> None:
+    async def on_task_complete(self, message: str, result: str, context: AgentContext) -> None:
         """Log job completion."""
         self.logger.info(f"Batch job #{self.jobs_processed} completed (job_id: {context.job_id})")
 
     async def on_task_error(
-        self, message: str, error: Exception, context: BackgroundContext
+        self, message: str, error: Exception, context: AgentContext
     ) -> str | None:
         """Handle job errors with recovery suggestions."""
         self.logger.error(f"Batch job #{self.jobs_processed} failed: {error}")
@@ -136,7 +137,7 @@ class BatchDataProcessorAgent(AsyncAgent):
         # Return None to use default error message
         return None
 
-    async def process_message(self, message: str, context: BackgroundContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """
         Process dataset in batches.
 

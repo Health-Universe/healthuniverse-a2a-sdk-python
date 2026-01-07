@@ -16,11 +16,9 @@ import httpx
 import pytest
 import uvicorn
 
-from health_universe_a2a import StreamingContext, create_app
+from health_universe_a2a import Agent, AgentContext, ValidationAccepted, create_app
 from health_universe_a2a.async_agent import AsyncAgent
 from health_universe_a2a.context import BackgroundContext
-from health_universe_a2a.streaming import StreamingAgent
-from health_universe_a2a.types.validation import ValidationAccepted
 
 
 def find_free_port() -> int:
@@ -32,7 +30,7 @@ def find_free_port() -> int:
         return port
 
 
-class TestE2EAgent(StreamingAgent):
+class TestE2EAgent(Agent):
     """Simple agent for end-to-end testing."""
 
     def get_agent_name(self) -> str:
@@ -44,7 +42,7 @@ class TestE2EAgent(StreamingAgent):
     def get_agent_version(self) -> str:
         return "1.0.0"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """Echo the message with a prefix."""
         user = context.user_id or "anonymous"
         return f"Hello {user}! You said: {message}"

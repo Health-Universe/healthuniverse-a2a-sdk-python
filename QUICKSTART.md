@@ -152,11 +152,16 @@ class DataProcessorAgent(AsyncAgent):
 ### Progress Updates
 
 ```python
+from a2a.types import TaskState
+
 # Simple progress
 await context.update_progress("Working...", 0.5)
 
 # With custom status
-await context.update_progress("Processing batch 3/10", 0.3, status="working")
+await context.update_progress("Processing batch 3/10", 0.3, status=TaskState.working)
+
+# Mark as completed
+await context.update_progress("Done", 1.0, status=TaskState.completed)
 ```
 
 ### Multiple Artifacts

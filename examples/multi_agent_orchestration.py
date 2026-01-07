@@ -19,13 +19,13 @@ All agents run on a single server (http://localhost:8501) at different paths:
 """
 
 from health_universe_a2a import (
-    StreamingAgent,
-    StreamingContext,
+    Agent,
+    AgentContext,
     serve_multi_agents,
 )
 
 
-class OrchestratorAgent(StreamingAgent):
+class OrchestratorAgent(Agent):
     """
     Orchestrator that coordinates multiple agents to process documents.
 
@@ -49,38 +49,27 @@ class OrchestratorAgent(StreamingAgent):
     def get_agent_description(self) -> str:
         return "Orchestrates document processing across multiple specialized agents"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """Process document through multi-agent pipeline."""
 
         # Step 1: Extract text from document
         await context.update_progress("Reading document...", 0.2)
         reader_response = await self.call_other_agent(
-            self.document_reader,
-            message,
-            context,
-            timeout=30.0
+            self.document_reader, message, context, timeout=30.0
         )
-        text = reader_response.text
+        text = reader_response.text or ""
 
         # Step 2: Classify document type
         await context.update_progress("Classifying document...", 0.5)
         classifier_response = await self.call_other_agent(
-            self.classifier,
-            text,
-            context,
-            timeout=10.0
+            self.classifier, text, context, timeout=10.0
         )
-        doc_type = classifier_response.text
+        doc_type = classifier_response.text or "Unknown"
 
         # Step 3: Generate summary
         await context.update_progress("Generating summary...", 0.8)
-        summary_response = await self.call_other_agent(
-            self.summarizer,
-            text,
-            context,
-            timeout=30.0
-        )
-        summary = summary_response.text
+        summary_response = await self.call_other_agent(self.summarizer, text, context, timeout=30.0)
+        summary = summary_response.text or ""
 
         # Return combined results
         await context.update_progress("Complete!", 1.0)
@@ -97,7 +86,7 @@ Original Text Length: {len(text)} characters
         return result
 
 
-class DocumentReaderAgent(StreamingAgent):
+class DocumentReaderAgent(Agent):
     """Reads documents and extracts text."""
 
     def get_agent_name(self) -> str:
@@ -106,7 +95,7 @@ class DocumentReaderAgent(StreamingAgent):
     def get_agent_description(self) -> str:
         return "Extracts text content from documents"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """Extract text from document path."""
         await context.update_progress("Opening document...", 0.3)
 
@@ -118,7 +107,7 @@ class DocumentReaderAgent(StreamingAgent):
         return extracted_text
 
 
-class ClassifierAgent(StreamingAgent):
+class ClassifierAgent(Agent):
     """Classifies document type based on content."""
 
     def get_agent_name(self) -> str:
@@ -127,7 +116,7 @@ class ClassifierAgent(StreamingAgent):
     def get_agent_description(self) -> str:
         return "Classifies documents by type (report, invoice, letter, etc.)"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """Classify document based on text content."""
         await context.update_progress("Analyzing content...", 0.5)
 
@@ -147,7 +136,7 @@ class ClassifierAgent(StreamingAgent):
         return doc_type
 
 
-class SummarizerAgent(StreamingAgent):
+class SummarizerAgent(Agent):
     """Generates summaries of document text."""
 
     def get_agent_name(self) -> str:
@@ -156,13 +145,13 @@ class SummarizerAgent(StreamingAgent):
     def get_agent_description(self) -> str:
         return "Generates concise summaries of document content"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """Generate summary of document text."""
         await context.update_progress("Generating summary...", 0.6)
 
         # Simple extractive summary (first sentence + word count)
         # In real app, would use LLM or extractive summarization
-        first_sentence = message.split('.')[0] if '.' in message else message[:100]
+        first_sentence = message.split(".")[0] if "." in message else message[:100]
         word_count = len(message.split())
 
         summary = f"{first_sentence}...\n\n[{word_count} words total]"
@@ -181,15 +170,17 @@ def main() -> None:
     summarizer = SummarizerAgent()
 
     # Serve all agents in a single server
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Multi-Agent Orchestration Example")
-    print("="*60)
+    print("=" * 60)
     print("\nStarting server with 4 agents...")
     print("\nTest with:")
-    print('  curl -X POST http://localhost:8501/orchestrator/ \\')
+    print("  curl -X POST http://localhost:8501/orchestrator/ \\")
     print('    -H "Content-Type: application/json" \\')
-    print('    -d \'{"jsonrpc": "2.0", "method": "message/send", "params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "/path/to/document.pdf"}]}}, "id": 1}\'')
-    print("\n" + "="*60 + "\n")
+    print(
+        '    -d \'{"jsonrpc": "2.0", "method": "message/send", "params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "/path/to/document.pdf"}]}}, "id": 1}\''
+    )
+    print("\n" + "=" * 60 + "\n")
 
     serve_multi_agents(
         agents={

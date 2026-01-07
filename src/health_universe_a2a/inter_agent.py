@@ -6,7 +6,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from a2a.types import DataPart, Message, Part, Role, TextPart
@@ -75,9 +75,10 @@ class AgentRegistry:
             if path.exists():
                 try:
                     with open(path) as f:
-                        self._cache = json.load(f)
+                        loaded = cast(dict[str, Any], json.load(f))
+                        self._cache = loaded
                         logger.debug(f"Loaded agent registry from {path}")
-                        return self._cache
+                        return loaded
                 except Exception as e:
                     logger.warning(f"Failed to load agent registry from {path}: {e}")
 
@@ -85,9 +86,10 @@ class AgentRegistry:
         registry_json = os.getenv("AGENT_REGISTRY")
         if registry_json:
             try:
-                self._cache = json.loads(registry_json)
+                loaded = cast(dict[str, Any], json.loads(registry_json))
+                self._cache = loaded
                 logger.debug("Loaded agent registry from AGENT_REGISTRY env var")
-                return self._cache
+                return loaded
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse AGENT_REGISTRY env var: {e}")
 
@@ -110,8 +112,8 @@ class AgentRegistry:
                     self._flat_cache[name] = info["url"]
                 elif isinstance(info, str):
                     self._flat_cache[name] = info
-        # Handle flat structure
-        elif isinstance(config, dict):
+        # Handle flat structure (config is already dict[str, Any])
+        else:
             for name, value in config.items():
                 if isinstance(value, str):
                     self._flat_cache[name] = value
@@ -139,8 +141,7 @@ class AgentRegistry:
             return registry[agent_name]
 
         raise ValueError(
-            f"Agent '{agent_name}' not found in registry. "
-            f"Available agents: {list(registry.keys())}"
+            f"Agent '{agent_name}' not found in registry. Available agents: {list(registry.keys())}"
         )
 
     def clear_cache(self) -> None:
@@ -197,7 +198,7 @@ class AgentResponse:
     Provides both raw A2A response and convenient parsed data access.
     """
 
-    def __init__(self, raw_response: dict):
+    def __init__(self, raw_response: dict[str, Any]):
         """
         Initialize from raw A2A response.
 
@@ -223,7 +224,7 @@ class AgentResponse:
             return self._text_cache
 
         texts = []
-        if isinstance(self.raw_response, dict) and "message" in self.raw_response:
+        if "message" in self.raw_response:
             msg = self.raw_response["message"]
             if isinstance(msg, dict) and "parts" in msg:
                 for part in msg["parts"]:
@@ -248,7 +249,7 @@ class AgentResponse:
         if self._data_cache is not None:
             return self._data_cache
 
-        if isinstance(self.raw_response, dict) and "message" in self.raw_response:
+        if "message" in self.raw_response:
             msg = self.raw_response["message"]
             if isinstance(msg, dict) and "parts" in msg:
                 for part in msg["parts"]:
@@ -271,7 +272,7 @@ class AgentResponse:
         Returns:
             List of part dictionaries (with 'kind' field)
         """
-        if isinstance(self.raw_response, dict) and "message" in self.raw_response:
+        if "message" in self.raw_response:
             msg = self.raw_response["message"]
             if isinstance(msg, dict) and "parts" in msg:
                 parts: list[dict[str, Any]] = msg["parts"]

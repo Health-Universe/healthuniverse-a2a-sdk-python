@@ -1,0 +1,240 @@
+# Health Universe A2A SDK for Python
+# Quick reference for LLM agents (Claude Code, Cursor, Copilot, etc.)
+# Version: 0.2.0
+
+## Overview
+
+Python SDK for building agents on the Health Universe platform.
+All agents use async processing with progress updates stored in database.
+
+## Installation
+
+```bash
+pip install health-universe-a2a
+```
+
+## Quick Start - Minimal Agent
+
+```python
+from health_universe_a2a import Agent, AgentContext
+
+class MyAgent(Agent):
+    def get_agent_name(self) -> str:
+        return "My Agent"
+
+    def get_agent_description(self) -> str:
+        return "Does something useful"
+
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        return f"Processed: {message}"
+
+if __name__ == "__main__":
+    agent = MyAgent()
+    agent.serve()
+```
+
+## Required Methods
+
+- `get_agent_name() -> str` - Agent display name
+- `get_agent_description() -> str` - What the agent does
+- `process_message(message: str, context: AgentContext) -> str` - Main logic
+
+## Optional Methods
+
+- `validate_message(message: str, metadata: dict) -> ValidationResult` - Pre-validation
+- `get_max_duration_seconds() -> int` - Max task duration (default: 3600)
+- `on_startup() -> None` - Called at server start
+- `on_shutdown() -> None` - Called at server stop
+
+## Document Operations (via context.document_client)
+
+```python
+async def process_message(self, message: str, context: AgentContext) -> str:
+    # List all documents in thread
+    docs = await context.document_client.list_documents()
+
+    # Filter documents by name
+    protocols = await context.document_client.filter_by_name("protocol")
+
+    # Read document content
+    content = await context.document_client.download_text(doc_id)
+    binary = await context.document_client.download(doc_id)
+
+    # Write new document (handles 3-step S3 upload)
+    await context.document_client.write(
+        "Analysis Results",
+        json.dumps({"score": 0.95}),
+        filename="results.json"
+    )
+
+    # Update existing document (creates new version)
+    await context.document_client.update(doc_id, new_content)
+
+    return "Done!"
+```
+
+## Progress Updates
+
+```python
+async def process_message(self, message: str, context: AgentContext) -> str:
+    await context.update_progress("Loading data...", 0.2)
+    # ... work ...
+    await context.update_progress("Processing...", 0.5)
+    # ... work ...
+    await context.update_progress("Complete!", 1.0)
+    return "Done!"
+```
+
+## Validation
+
+```python
+from health_universe_a2a import ValidationAccepted, ValidationRejected
+
+async def validate_message(self, message: str, metadata: dict):
+    if not message:
+        return ValidationRejected(reason="Empty message")
+    return ValidationAccepted(estimated_duration_seconds=60)
+```
+
+## Inter-Agent Communication
+
+```python
+async def process_message(self, message: str, context: AgentContext) -> str:
+    # Call another agent with JWT propagation
+    response = await self.call_other_agent("/other-agent", message, context)
+    return response.text
+
+    # Or with structured data
+    response = await self.call_other_agent_with_data(
+        "/processor",
+        {"query": message},
+        context
+    )
+    return json.dumps(response.data)
+```
+
+## Multi-Agent Server
+
+```python
+from health_universe_a2a import serve_multi_agents
+
+serve_multi_agents({
+    "/analyzer": AnalyzerAgent(),
+    "/processor": ProcessorAgent(),
+}, port=8000)
+```
+
+## Key Classes
+
+- `Agent` (alias: AsyncAgent) - Base class for agents
+- `AgentContext` (alias: BackgroundContext) - Context passed to process_message
+- `Document` - Document metadata (id, name, filename, document_type, latest_version)
+- `DocumentClient` - Client for document operations (via context.document_client)
+- `ValidationAccepted` - Return from validate_message on success
+- `ValidationRejected` - Return from validate_message on failure
+
+## AgentContext Properties
+
+- `context.user_id: str | None` - User ID from request
+- `context.thread_id: str | None` - Thread/conversation ID
+- `context.file_access_token: str | None` - Token for document operations
+- `context.auth_token: str | None` - JWT for inter-agent calls
+- `context.document_client: DocumentClient` - Document operations client
+
+## DocumentClient Methods
+
+- `list_documents(include_hidden=False) -> list[Document]`
+- `filter_by_name(query: str) -> list[Document]`
+- `get_document(document_id: str) -> Document`
+- `download(document_id: str) -> bytes`
+- `download_text(document_id: str) -> str`
+- `write(name, content, filename=None, ...) -> Document`
+- `update(document_id, content, comment=None) -> Document`
+
+## Document Properties
+
+- `doc.id: str` - Document UUID
+- `doc.name: str` - Display name
+- `doc.filename: str` - Storage filename
+- `doc.document_type: str` - "user_upload" or "agent_output"
+- `doc.latest_version: int | None` - Version number
+- `doc.user_visible: bool` - Visible to users
+
+## Environment Variables
+
+- `HU_APP_URL` or `A2A_BASE_URL` - Agent base URL
+- `HU_NESTJS_URL` - Document API URL (default: https://api.healthuniverse.com)
+- `BACKGROUND_UPDATE_URL` - Update API URL (default: https://api.healthuniverse.com)
+- `LOCAL_AGENT_BASE_URL` - Local agent URL (default: http://localhost:8501)
+- `HOST` - Server host (default: 0.0.0.0)
+- `PORT` or `AGENT_PORT` - Server port (default: 8000)
+
+## Example Agents
+
+See `examples/` directory:
+- `simple_agent.py` - Minimal echo agent
+- `medical_classifier.py` - Symptom classification (no documents)
+- `document_inventory.py` - List documents and metadata
+- `protocol_analyzer.py` - Find, read, and analyze documents
+- `multi_agent_orchestration.py` - Inter-agent communication
+
+## Common Patterns
+
+### Healthcare Data Agent
+```python
+class DataAnalyzer(Agent):
+    def get_agent_name(self) -> str:
+        return "Clinical Data Analyzer"
+
+    def get_agent_description(self) -> str:
+        return "Analyzes clinical datasets"
+
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        # Find CSV files
+        csvs = await context.document_client.filter_by_name(".csv")
+        if not csvs:
+            return "No CSV files found"
+
+        # Read and analyze
+        content = await context.document_client.download_text(csvs[0].id)
+        results = analyze_csv(content)
+
+        # Save results
+        await context.document_client.write(
+            "Analysis Results",
+            json.dumps(results),
+            filename="analysis.json"
+        )
+
+        return f"Analyzed {csvs[0].name}"
+```
+
+### Validation Agent
+```python
+class ValidatedAgent(Agent):
+    async def validate_message(self, message: str, metadata: dict):
+        try:
+            data = json.loads(message)
+            if "required_field" not in data:
+                return ValidationRejected(reason="Missing required_field")
+            return ValidationAccepted(estimated_duration_seconds=120)
+        except json.JSONDecodeError:
+            return ValidationRejected(reason="Invalid JSON")
+```
+
+### Orchestrator Agent
+```python
+class Orchestrator(Agent):
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        # Call analyzer
+        analysis = await self.call_other_agent("/analyzer", message, context)
+
+        # Call processor with analysis results
+        result = await self.call_other_agent_with_data(
+            "/processor",
+            {"input": message, "analysis": analysis.text},
+            context
+        )
+
+        return result.text
+```

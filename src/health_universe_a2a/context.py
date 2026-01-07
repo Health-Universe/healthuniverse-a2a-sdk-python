@@ -1,25 +1,39 @@
-"""Context objects passed to agent process_message methods"""
+"""Context objects passed to agent process_message methods.
+
+The AgentContext (alias for BackgroundContext) is the primary context class for agents.
+It provides access to document operations, progress updates, and inter-agent communication.
+
+Example:
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        # List documents in the thread
+        docs = await context.document_client.list_documents()
+
+        # Update progress
+        await context.update_progress("Processing...", 0.5)
+
+        # Write output document
+        await context.document_client.write("Results", json.dumps(results))
+
+        return "Done!"
+"""
 
 import asyncio
 import logging
 import os
-import uuid
 from typing import TYPE_CHECKING, Any
 
-from a2a.server.agent_execution import RequestContext
-from a2a.server.tasks import TaskUpdater
-from a2a.types import Message, Part, Role, TaskState, TextPart
+from a2a.server.agent_execution import RequestContext as _RequestContext
+from a2a.server.tasks import TaskUpdater as _TaskUpdater
 from pydantic import BaseModel, ConfigDict, Field
 
 from health_universe_a2a.types.extensions import (
-    HU_LOG_LEVEL_EXTENSION_URI,
     UpdateImportance,
 )
 from health_universe_a2a.update_client import BackgroundUpdateClient
 
 if TYPE_CHECKING:
+    from health_universe_a2a.documents import DocumentClient
     from health_universe_a2a.inter_agent import InterAgentClient
-    from health_universe_a2a.storage import StorageBackend
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +42,6 @@ class BaseContext(BaseModel):
     """
     Base context class with common fields for all agent contexts.
 
-    This is an abstract base class - use StreamingContext or BackgroundContext instead.
-
     Attributes:
         user_id: User ID from request metadata (optional, may not be present)
         thread_id: Thread/conversation ID from request metadata (optional)
@@ -37,6 +49,17 @@ class BaseContext(BaseModel):
         auth_token: JWT token from original request for inter-agent calls (optional)
         metadata: Raw metadata from A2A request
         extensions: List of extension URIs from the request message (optional)
+
+    Example:
+        async def process_message(self, message: str, context: AgentContext) -> str:
+            # Access user info
+            print(f"User: {context.user_id}")
+            print(f"Thread: {context.thread_id}")
+
+            # Check if file access is available
+            if context.file_access_token:
+                docs = await context.document_client.list_documents()
+            return "Done"
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -62,8 +85,6 @@ class BaseContext(BaseModel):
         1. Override cancel() in your agent (see A2AAgentBase.cancel() docs)
         2. Implement your own cancellation state tracking
         3. Check that state in your processing loops
-
-        Use this to gracefully stop processing if the user cancels the request.
 
         Returns:
             True if task was cancelled, False otherwise (currently always False)
@@ -102,7 +123,7 @@ class BaseContext(BaseModel):
             Configured InterAgentClient instance
 
         Example:
-            async def process_message(self, message: str, context: MessageContext) -> str:
+            async def process_message(self, message: str, context: AgentContext) -> str:
                 # Call a local agent in the same pod
                 client = context.create_inter_agent_client("/data-processor")
                 result = await client.call(message)
@@ -128,161 +149,14 @@ class BaseContext(BaseModel):
         )
 
 
-class StreamingContext(BaseContext):
-    """
-    Context for StreamingAgent with SSE streaming updates.
-
-    This context is used for short-running tasks (< 5 min) that stream
-    progress updates via Server-Sent Events (SSE).
-
-    Attributes:
-        updater: TaskUpdater instance for sending SSE updates (always present)
-        request_context: Original A2A RequestContext (always present)
-        storage: Optional StorageBackend for file operations
-        user_id: User ID from request metadata (optional)
-        thread_id: Thread/conversation ID from request metadata (optional)
-        file_access_token: Access token for file operations (optional)
-        auth_token: JWT token from original request for inter-agent calls (optional)
-        metadata: Raw metadata from A2A request
-        extensions: List of extension URIs from the request message (optional)
-
-    Example:
-        async def process_message(self, message: str, context: StreamingContext) -> str:
-            await context.update_progress("Loading data...", 0.2)
-            data = await load_data(message)
-
-            await context.update_progress("Processing...", 0.6)
-            results = await process_data(data)
-
-            await context.add_artifact(
-                name="Results",
-                content=json.dumps(results),
-                data_type="application/json"
-            )
-
-            return "Processing complete!"
-    """
-
-    updater: TaskUpdater
-    request_context: RequestContext
-    storage: "StorageBackend | None" = None
-
-    async def update_progress(
-        self,
-        message: str,
-        progress: float | None = None,
-        status: str = "working",
-        importance: UpdateImportance = UpdateImportance.INFO,
-    ) -> None:
-        """
-        Send a progress update to the UI via A2A protocol (SSE).
-
-        Args:
-            message: Status message to display
-            progress: Progress from 0.0 to 1.0 (optional)
-            status: Task status (default: "working")
-            importance: Update importance level (default: INFO).
-                Only NOTICE and ERROR are pushed to Navigator UI.
-
-        Example:
-            await context.update_progress("Loading data...", 0.2)
-            await context.update_progress(
-                "Critical milestone!",
-                0.5,
-                importance=UpdateImportance.NOTICE
-            )
-
-        Note:
-            Updates are streamed live via SSE to the client.
-        """
-        # Create message with progress metadata
-        metadata: dict[str, Any] = {}
-        if progress is not None:
-            metadata["progress"] = progress
-        # Add importance to metadata for log level extension
-        metadata[HU_LOG_LEVEL_EXTENSION_URI] = {"importance": importance.value}
-
-        # Create A2A Message object
-        text_part = TextPart(text=message)
-        msg = Message(
-            message_id=str(uuid.uuid4()),
-            role=Role.agent,
-            parts=[Part(root=text_part)],
-            metadata=metadata if metadata else None,
-        )
-
-        # Map status string to TaskState
-        state_map = {
-            "working": TaskState.working,
-            "completed": TaskState.completed,
-            "failed": TaskState.failed,
-            "error": TaskState.failed,
-            "queued": TaskState.submitted,
-        }
-        task_state = state_map.get(status, TaskState.working)
-
-        # Update status via TaskUpdater
-        await self.updater.update_status(
-            state=task_state,
-            message=msg,
-            final=False,
-            metadata=metadata if metadata else None,
-        )
-
-    async def add_artifact(
-        self,
-        name: str,
-        content: str,
-        data_type: str = "text/plain",
-        description: str = "",
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """
-        Add an artifact to the response via A2A protocol (SSE).
-
-        Artifacts appear in the UI and can be downloaded/viewed by users.
-
-        Args:
-            name: Artifact name (e.g., "Analysis Results")
-            content: Artifact content (string or bytes)
-            data_type: MIME type (e.g., "application/json", "image/png")
-            description: Optional description
-            metadata: Optional metadata dict
-
-        Example:
-            await context.add_artifact(
-                name="Results",
-                content=json.dumps({"score": 0.95}),
-                data_type="application/json"
-            )
-
-        Note:
-            Artifacts are streamed live via SSE to the client.
-        """
-        # Create artifact metadata
-        artifact_metadata = metadata or {}
-        if description:
-            artifact_metadata["description"] = description
-        artifact_metadata["data_type"] = data_type
-
-        # Create A2A Part with content
-        text_part = TextPart(text=content, metadata=artifact_metadata)
-        parts = [Part(root=text_part)]
-
-        # Add artifact via TaskUpdater
-        await self.updater.add_artifact(
-            parts=parts,
-            name=name,
-            metadata=artifact_metadata,
-        )
-
-
 class BackgroundContext(BaseContext):
     """
-    Context for AsyncAgent background job execution.
+    Context for Agent (AsyncAgent) background job execution.
 
-    This context is used for long-running tasks (> 5 min) that execute
-    in the background and post updates to the backend via HTTP.
+    This is the primary context class for Health Universe agents. It provides:
+    - Progress updates that are stored in the database
+    - Document operations via the `document_client` property
+    - Inter-agent communication via `create_inter_agent_client()`
 
     Attributes:
         update_client: BackgroundUpdateClient for POSTing updates (always present)
@@ -295,7 +169,11 @@ class BackgroundContext(BaseContext):
         extensions: List of extension URIs from the request message (optional)
 
     Example:
-        async def process_message(self, message: str, context: BackgroundContext) -> str:
+        async def process_message(self, message: str, context: AgentContext) -> str:
+            # List documents in the thread
+            docs = await context.document_client.list_documents()
+
+            # Process with progress updates
             for i in range(10):
                 await context.update_progress(
                     f"Processing batch {i+1}/10",
@@ -303,10 +181,11 @@ class BackgroundContext(BaseContext):
                 )
                 await process_batch(i)
 
-            await context.add_artifact(
-                name="Final Results",
-                content=json.dumps(results),
-                data_type="application/json"
+            # Write results as a new document
+            await context.document_client.write(
+                "Final Results",
+                json.dumps(results),
+                filename="results.json"
             )
 
             return "All batches processed!"
@@ -315,6 +194,46 @@ class BackgroundContext(BaseContext):
     update_client: BackgroundUpdateClient
     job_id: str
     loop: Any | None = None  # asyncio event loop for sync updates
+    _documents: "DocumentClient | None" = None
+
+    @property
+    def document_client(self) -> "DocumentClient":
+        """
+        Get document client for file operations in this thread.
+
+        The DocumentClient provides methods to list, read, write, and search
+        documents in the current thread. Documents are stored in S3 via the
+        Health Universe NestJS backend.
+
+        Returns:
+            DocumentClient configured for this thread
+
+        Example:
+            # List all documents
+            docs = await context.document_client.list_documents()
+
+            # Read a document
+            content = await context.document_client.download_text(doc_id)
+
+            # Write a new document
+            await context.document_client.write(
+                "Analysis Results",
+                json.dumps({"score": 0.95}),
+                filename="results.json"
+            )
+
+            # Filter documents by name
+            matches = await context.document_client.filter_by_name("protocol")
+        """
+        if self._documents is None:
+            from health_universe_a2a.documents import DocumentClient
+
+            self._documents = DocumentClient(
+                base_url=os.getenv("HU_NESTJS_URL", "https://api.healthuniverse.com"),
+                access_token=self.file_access_token or "",
+                thread_id=self.thread_id or "",
+            )
+        return self._documents
 
     async def update_progress(
         self,
@@ -327,23 +246,27 @@ class BackgroundContext(BaseContext):
         Send a progress update (POSTed to backend).
 
         Updates are stored in the database and displayed to users even if they're offline.
+        Use this to keep users informed of long-running task progress.
 
         Args:
-            message: Status message
+            message: Status message to display
             progress: Progress from 0.0 to 1.0 (optional)
             status: Task status (default: "working")
             importance: Update importance level (default: INFO).
                 Only NOTICE and ERROR are pushed to Navigator UI in real-time.
 
         Example:
+            # Simple progress update
+            await context.update_progress("Loading data...", 0.2)
+
+            # Progress with percentage
             for i, batch in enumerate(batches):
                 await context.update_progress(
                     f"Processing batch {i+1}/{len(batches)}",
-                    progress=(i+1)/len(batches),
-                    importance=UpdateImportance.INFO
+                    progress=(i+1)/len(batches)
                 )
 
-            # Important milestone - will show in Navigator
+            # Important milestone - will show in Navigator UI
             await context.update_progress(
                 "Analysis complete!",
                 progress=1.0,
@@ -353,7 +276,6 @@ class BackgroundContext(BaseContext):
         Note:
             Updates are POSTed to the backend and persisted in the database.
         """
-        # Include importance in the update
         await self.update_client.post_update(
             update_type="progress",
             status_message=message,
@@ -382,7 +304,7 @@ class BackgroundContext(BaseContext):
             importance: Update importance level (default: INFO)
 
         Example:
-            def cpu_intensive_work(context: BackgroundContext, data):
+            def cpu_intensive_work(context: AgentContext, data):
                 for i, chunk in enumerate(data):
                     context.update_progress_sync(
                         f"Processing chunk {i+1}/{len(data)}",
@@ -425,22 +347,30 @@ class BackgroundContext(BaseContext):
         """
         Add an artifact (POSTed to backend).
 
+        Artifacts appear in the UI and can be downloaded/viewed by users.
+        Use this for intermediate outputs or files that don't need to be
+        stored as documents.
+
+        For persistent document storage, use context.document_client.write() instead.
+
         Args:
-            name: Artifact name
-            content: Artifact content
-            data_type: MIME type
+            name: Artifact name (e.g., "Analysis Results")
+            content: Artifact content as string
+            data_type: MIME type (e.g., "application/json", "text/markdown")
             description: Optional description
             metadata: Optional metadata dict
 
         Example:
             await context.add_artifact(
-                name=f"Batch {i} Results",
-                content=json.dumps(results),
-                data_type="application/json"
+                name="Batch Results",
+                content=json.dumps({"score": 0.95}),
+                data_type="application/json",
+                description="Results from batch processing"
             )
 
         Note:
             Artifacts are POSTed to the backend and persisted in the database.
+            For file storage in the thread, use context.document_client.write() instead.
         """
         artifact_data: dict[str, Any] = {
             "name": name,
@@ -486,3 +416,25 @@ class BackgroundContext(BaseContext):
             future.result(timeout=30.0)
         except Exception as e:
             logger.error(f"Failed to add artifact from thread: {e}")
+
+
+# Alias for simpler API
+AgentContext = BackgroundContext
+
+
+# Internal context for SSE validation phase (used by AsyncAgent internally)
+class _SSEContext(BaseContext):
+    """
+    Internal context for SSE validation phase.
+
+    This is NOT part of the public API. Use AgentContext (BackgroundContext) instead.
+    This is only used internally by AsyncAgent during the validation/acknowledgment
+    phase before the background task starts.
+    """
+
+    updater: _TaskUpdater
+    request_context: _RequestContext
+
+
+# Backwards compatibility alias (internal use only)
+StreamingContext = _SSEContext

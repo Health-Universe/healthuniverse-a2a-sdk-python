@@ -18,14 +18,14 @@ import json
 from typing import Any
 
 from health_universe_a2a import (
-    StreamingContext,
+    Agent,
+    AgentContext,
     ValidationAccepted,
     ValidationRejected,
 )
-from health_universe_a2a.streaming import StreamingAgent
 
 
-class DataProcessorAgent(StreamingAgent):
+class DataProcessorAgent(Agent):
     """An agent that processes data with validation and progress tracking."""
 
     def __init__(self) -> None:
@@ -63,7 +63,7 @@ class DataProcessorAgent(StreamingAgent):
 
     # Main processing
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """Process the message with progress updates."""
         words = message.split()
 
@@ -131,17 +131,17 @@ class DataProcessorAgent(StreamingAgent):
         self.logger.info("🚀 Data Processor Agent starting up!")
         self.processed_count = 0
 
-    async def on_task_start(self, message: str, context: StreamingContext) -> None:
+    async def on_task_start(self, message: str, context: AgentContext) -> None:
         """Called before processing each message."""
         self.logger.info(f"📝 Starting task for user: {context.user_id}")
 
-    async def on_task_complete(self, message: str, result: str, context: StreamingContext) -> None:
+    async def on_task_complete(self, message: str, result: str, context: AgentContext) -> None:
         """Called after successfully processing a message."""
         self.processed_count += 1
         self.logger.info(f"✅ Task completed! Total processed: {self.processed_count}")
 
     async def on_task_error(
-        self, message: str, error: Exception, context: StreamingContext
+        self, message: str, error: Exception, context: AgentContext
     ) -> str | None:
         """Called when an error occurs during processing."""
         self.logger.error(f"❌ Task failed: {error}")

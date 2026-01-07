@@ -8,7 +8,15 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from a2a.server.events import Event, EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Artifact, Message, Part, TaskArtifactUpdateEvent, TaskState, TextPart
+from a2a.types import (
+    Artifact,
+    Message,
+    Part,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatusUpdateEvent,
+    TextPart,
+)
 
 from health_universe_a2a.types.extensions import (
     HU_LOG_LEVEL_EXTENSION_URI,
@@ -187,7 +195,7 @@ class BackgroundArtifactQueue(EventQueue):
             event: A2A event (TaskStatusUpdateEvent or TaskArtifactUpdateEvent)
         """
         # Log status updates immediately
-        if hasattr(event, "status"):
+        if isinstance(event, TaskStatusUpdateEvent):
             logger.debug(f"[Background Status] {event.status.state}: {event.status.message}")
         else:
             logger.debug(f"[Background Event] {type(event).__name__}")
@@ -298,27 +306,25 @@ class BackgroundTaskUpdater(TaskUpdater):
         if not message:
             return ""
 
-        if hasattr(message, "parts") and message.parts:
+        if message.parts:
             for part in message.parts:
                 # Try Part wrapper: Part(root=TextPart(text='...'))
-                if hasattr(part, "root") and part.root:
-                    root = part.root
-                    if hasattr(root, "text") and root.text:
-                        return str(root.text)
-                    if isinstance(root, dict) and root.get("text"):
-                        return str(root["text"])
+                if part.root is not None and isinstance(part.root, TextPart):
+                    return part.root.text
 
                 # Try part as dict with nested structure
                 if isinstance(part, dict):
                     if "root" in part and isinstance(part["root"], dict):
-                        if part["root"].get("text"):
-                            return str(part["root"]["text"])
-                    if part.get("text"):
-                        return str(part["text"])
+                        text_value = part["root"].get("text")
+                        if text_value:
+                            return str(text_value)
+                    text_value = part.get("text")
+                    if text_value:
+                        return str(text_value)
 
-                # Try direct text attribute on part
-                if hasattr(part, "text") and part.text:
-                    return str(part.text)
+                # Try direct TextPart (fallback)
+                if isinstance(part, TextPart):
+                    return part.text
 
         return ""
 

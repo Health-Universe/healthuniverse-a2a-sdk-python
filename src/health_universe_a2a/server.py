@@ -321,11 +321,17 @@ def serve_multi_agents(
     logger.info(f"📋 Mounted {len(agents)} agent(s):")
     for path, agent in agents.items():
         logger.info(f"   {path:25} → {agent.get_agent_name()} v{agent.get_agent_version()}")
-        logger.info(f"      Agent Card: http://localhost:{actual_port}{path}/.well-known/agent-card.json")
-        logger.info(f'      JSON-RPC:   POST http://localhost:{actual_port}{path}/ (method: "message/send")')
+        logger.info(
+            f"      Agent Card: http://localhost:{actual_port}{path}/.well-known/agent-card.json"
+        )
+        logger.info(
+            f'      JSON-RPC:   POST http://localhost:{actual_port}{path}/ (method: "message/send")'
+        )
     logger.info("=" * 60)
     logger.info("💡 Agents can call each other using relative paths:")
-    logger.info(f"   Example: await self.call_other_agent('{list(agents.keys())[0]}', message, context)")
+    logger.info(
+        f"   Example: await self.call_other_agent('{list(agents.keys())[0]}', message, context)"
+    )
     logger.info("=" * 60)
 
     # Run the server

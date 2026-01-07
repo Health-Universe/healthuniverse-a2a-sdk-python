@@ -47,12 +47,11 @@ nav:
   - Guides:
     - Streaming Agents: guides/streaming-agents.md
     - Background Jobs: guides/background-jobs.md
-    - Storage: guides/storage.md
     - Inter-Agent Communication: guides/inter-agent.md
   - API Reference:
     - Agents: api/agents.md
     - Context: api/context.md
-    - Storage: api/storage.md
+    - Documents: api/documents.md
     - Extensions: api/extensions.md
 
 markdown_extensions:

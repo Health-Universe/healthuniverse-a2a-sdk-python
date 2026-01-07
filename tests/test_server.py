@@ -5,15 +5,15 @@ from typing import Any
 from starlette.testclient import TestClient
 
 from health_universe_a2a import (
-    StreamingAgent,
-    StreamingContext,
+    Agent,
+    AgentContext,
     ValidationAccepted,
     ValidationRejected,
     create_app,
 )
 
 
-class TestServerAgent(StreamingAgent):
+class TestServerAgent(Agent):
     """Simple agent for server testing."""
 
     def get_agent_name(self) -> str:
@@ -25,11 +25,11 @@ class TestServerAgent(StreamingAgent):
     def get_agent_version(self) -> str:
         return "1.0.0"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         return f"Echo: {message}"
 
 
-class TestValidatingAgent(StreamingAgent):
+class TestValidatingAgent(Agent):
     """Agent with custom validation for testing rejection flow."""
 
     def get_agent_name(self) -> str:
@@ -45,7 +45,7 @@ class TestValidatingAgent(StreamingAgent):
             return ValidationRejected(reason="Message too short")
         return ValidationAccepted()
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         return f"Valid: {message}"
 
 
@@ -316,7 +316,7 @@ class TestCustomAgentConfiguration:
     def test_custom_version_in_agent_card(self) -> None:
         """Custom agent version should appear in agent card."""
 
-        class CustomVersionAgent(StreamingAgent):
+        class CustomVersionAgent(Agent):
             def get_agent_name(self) -> str:
                 return "Custom Agent"
 
@@ -326,7 +326,7 @@ class TestCustomAgentConfiguration:
             def get_agent_version(self) -> str:
                 return "2.5.0"
 
-            async def process_message(self, message: str, context: StreamingContext) -> str:
+            async def process_message(self, message: str, context: AgentContext) -> str:
                 return "processed"
 
         agent = CustomVersionAgent()
@@ -341,7 +341,7 @@ class TestCustomAgentConfiguration:
     def test_custom_formats_in_agent_card(self) -> None:
         """Custom input/output formats should appear in agent card."""
 
-        class CustomFormatsAgent(StreamingAgent):
+        class CustomFormatsAgent(Agent):
             def get_agent_name(self) -> str:
                 return "Formats Agent"
 
@@ -354,7 +354,7 @@ class TestCustomAgentConfiguration:
             def get_supported_output_formats(self) -> list[str]:
                 return ["application/json", "text/html"]
 
-            async def process_message(self, message: str, context: StreamingContext) -> str:
+            async def process_message(self, message: str, context: AgentContext) -> str:
                 return "processed"
 
         agent = CustomFormatsAgent()

@@ -32,7 +32,7 @@ Three-tier context hierarchy:
 
 ```
 BaseContext (user_id, thread_id, file_access_token, auth_token, metadata)
-    ├── StreamingContext (+updater for SSE, +storage optional)
+    ├── StreamingContext (+updater for SSE)
     └── BackgroundContext (+update_client for POST, +job_id, +loop for sync)
 ```
 
@@ -75,7 +75,7 @@ Health Universe platform extensions declared via `get_extensions()`:
 
 - Classes: `PascalCase` (e.g., `StreamingAgent`, `BackgroundContext`)
 - Functions/methods: `snake_case` (e.g., `process_message`, `update_progress`)
-- Constants: `SCREAMING_SNAKE_CASE` (e.g., `FILE_ACCESS_EXTENSION_URI_V2`)
+- Constants: `SCREAMING_SNAKE_CASE` (e.g., `FILE_ACCESS_EXTENSION_URI`)
 - Private members: `_leading_underscore` (e.g., `_cancelled`, `_extract_message`)
 
 ### File Organization
@@ -84,13 +84,12 @@ Health Universe platform extensions declared via `get_extensions()`:
 src/health_universe_a2a/
 ├── __init__.py          # Public API exports
 ├── base.py              # A2AAgentBase class
-├── streaming.py         # StreamingAgent
 ├── async_agent.py       # AsyncAgent
 ├── context.py           # Context objects
+├── documents.py         # DocumentClient for file operations
 ├── inter_agent.py       # InterAgentClient, AgentRegistry
 ├── server.py            # HTTP server utilities
 ├── update_client.py     # BackgroundUpdateClient, BackgroundTaskUpdater
-├── storage.py           # StorageBackend, directory_context
 ├── nest_client.py       # NestJS S3 API client
 └── types/
     ├── extensions.py    # Extension URIs, params, helpers
@@ -140,24 +139,29 @@ context = StreamingContext(
 
 ## Key Patterns
 
-### Storage Context Pattern
+### Document Operations
 
-For S3 file access via NestJS:
+For reading and writing documents in threads:
 
 ```python
-from health_universe_a2a.storage import directory_context
-from health_universe_a2a.types.extensions import FileAccessExtensionParams
+async def process_message(self, message: str, context: AgentContext) -> str:
+    # List all documents in the thread
+    docs = await context.document_client.list_documents()
 
-# Extract params from metadata
-params = FileAccessExtensionParams.model_validate(
-    metadata[FILE_ACCESS_EXTENSION_URI_V2]
-)
+    # Find specific documents by name
+    protocols = await context.document_client.filter_by_name("protocol")
 
-# Downloads all thread files to temp directory
-async with directory_context(params) as tmp_dir:
-    files = os.listdir(tmp_dir)
-    content = (tmp_dir / "document.pdf").read_bytes()
-# Auto-cleanup on exit
+    # Download document content
+    content = await context.document_client.download_text(doc.id)
+
+    # Write new document to thread
+    await context.document_client.write(
+        name="Analysis Results",
+        content=json.dumps(results),
+        filename="results.json"
+    )
+
+    return "Done!"
 ```
 
 ### Inter-Agent Communication
@@ -233,13 +237,11 @@ with ThreadPoolExecutor(max_workers=4) as executor:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HU_APP_URL` | Agent base URL for agent card | `http://localhost:8000` |
-| `NEST_URL` | NestJS API URL for S3 access | `https://apps.healthuniverse.com/api/v1` |
-| `USE_S3` | Enable S3 storage mode | `false` |
+| `HU_NESTJS_URL` | NestJS API URL for document operations | `https://api.healthuniverse.com` |
 | `AGENT_REGISTRY_PATH` | Path to agents.json registry | None |
 | `BACKGROUND_UPDATE_URL` | URL for POST updates | `https://api.healthuniverse.com` |
 | `JOB_STATUS_UPDATE_URL` | URL for job status webhooks | None |
 | `JOB_RESULTS_URL` | URL for job results webhooks | None |
-| `CALLBACK_URL` | Legacy callback URL | `https://apps.healthuniverse.com/graph/job-results` |
 
 ## Common Pitfalls
 
@@ -311,16 +313,6 @@ async def handle_request(self, message, context, metadata):
         await context.updater.reject(reason=result.reason)
         return None
     # Now safe to process
-```
-
-### 6. Using v1 file access extension (deprecated)
-
-```python
-# DEPRECATED - Supabase backend
-from health_universe_a2a.types.extensions import FILE_ACCESS_EXTENSION_URI
-
-# CORRECT - NestJS/S3 backend
-from health_universe_a2a.types.extensions import FILE_ACCESS_EXTENSION_URI_V2
 ```
 
 ## Quick Reference

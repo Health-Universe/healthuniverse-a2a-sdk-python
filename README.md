@@ -6,13 +6,13 @@ A simple, batteries-included Python SDK for building [A2A-compliant agents](http
 
 ## Features
 
-- 🚀 **Simple API**: Just implement 3 methods to create an agent
-- 🔄 **Two Agent Types**: StreamingAgent (streaming) and AsyncAgent (long-running)
-- 🎯 **Auto-configuration**: Extensions configured automatically based on requirements
-- 📊 **Progress Updates**: Built-in support for progress tracking and artifacts
-- ✅ **Validation**: Pre-validate messages before processing
-- 🔧 **Lifecycle Hooks**: Customize behavior at key points
-- 🏥 **Health Universe Integration**: Works seamlessly with HU platform
+- **Simple API**: Just implement 3 methods to create an agent
+- **Document Operations**: Built-in support for reading and writing files
+- **Multi-Agent Support**: Run multiple agents with inter-agent communication
+- **Progress Updates**: Built-in support for progress tracking and artifacts
+- **Validation**: Pre-validate messages before processing
+- **Lifecycle Hooks**: Customize behavior at key points
+- **Health Universe Integration**: Works seamlessly with HU platform
 
 ## Installation
 
@@ -36,182 +36,103 @@ uv pip install health-universe-a2a[dev]
 
 ## Quick Start
 
-### Simple Realtime Agent
-
 ```python
-from health_universe_a2a import StreamingAgent, StreamingContext
+from health_universe_a2a import Agent, AgentContext
 
-class CalculatorAgent(StreamingAgent):
+class SymptomClassifierAgent(Agent):
     def get_agent_name(self) -> str:
-        return "Calculator"
+        return "Symptom Classifier"
 
     def get_agent_description(self) -> str:
-        return "Performs basic calculations"
+        return "Classifies symptoms into medical categories"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
-        await context.update_progress("Calculating...", 0.5)
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        await context.update_progress("Analyzing symptoms...", 0.5)
 
-        # Parse and calculate
-        result = eval(message)  # Don't do this in production!
+        # Your classification logic here
+        category = classify_symptoms(message)
 
-        return f"Result: {result}"
+        return f"Classification: {category}"
+
+if __name__ == "__main__":
+    SymptomClassifierAgent().serve()
 ```
 
-### Simple Background Agent
+## Working with Documents
+
+The SDK provides a `DocumentClient` for reading and writing files in the Health Universe platform:
 
 ```python
-from health_universe_a2a import AsyncAgent, BackgroundContext
+from health_universe_a2a import Agent, AgentContext
 
-class FileProcessorAgent(AsyncAgent):
+class DocumentAnalyzerAgent(Agent):
     def get_agent_name(self) -> str:
-        return "File Processor"
+        return "Document Analyzer"
 
     def get_agent_description(self) -> str:
-        return "Processes files in background"
+        return "Analyzes clinical documents"
 
-    def requires_file_access(self) -> bool:
-        return True  # Auto-enables file access extension
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        # List all documents in the thread
+        documents = await context.document_client.list_documents()
 
-    async def process_message(self, message: str, context: BackgroundContext) -> str:
-        await context.update_progress("Loading file...", 0.2)
+        # Filter documents by name
+        protocols = await context.document_client.filter_by_name("protocol")
 
-        # Process file using context.file_access_token
-        data = await load_file(context.file_access_token, message)
+        # Download and read a document
+        content = await context.document_client.download_text(documents[0].id)
 
-        await context.update_progress("Processing...", 0.6)
-        result = await process_data(data)
-
-        await context.add_artifact(
-            name="Results",
-            content=json.dumps(result),
-            data_type="application/json"
+        # Write results back
+        await context.document_client.write(
+            filename="analysis_results.json",
+            content='{"result": "analysis complete"}',
+            mime_type="application/json",
         )
 
-        return "Processing complete!"
+        return f"Analyzed {len(documents)} documents"
 ```
-
-## Agent Types
-
-### StreamingAgent
-
-Use for **short-running tasks** (< 5 minutes) that stream updates in real-time:
-
-- ✅ User expects immediate feedback
-- ✅ Processing takes seconds to minutes
-- ✅ Updates streamed via A2A protocol (SSE)
-- ❌ Long-running tasks (will timeout)
-
-**Features:**
-- Real-time progress updates
-- Artifact streaming
-- Automatic SSE streaming configuration
-
-### AsyncAgent
-
-Use for **long-running tasks** (hours) that process in the background:
-
-- ✅ Processing takes many minutes to hours
-- ✅ User doesn't need to wait for completion
-- ✅ Updates POSTed to backend for persistence
-- ✅ No timeout constraints
-
-**Features:**
-- Pre-validation before job enqueueing
-- Progress updates via POST to backend
-- Jobs persist across disconnects
-- No SSE timeout limits
-
-### Choosing the Right Agent Type
-
-Use this decision tree to select the appropriate agent type:
-
-```
-Is the task duration > 5 minutes?
-│
-├─ NO: Use StreamingAgent
-│   └─ User waits for response (chat-like interaction)
-│   └─ Real-time feedback via SSE
-│   └─ Standards-compliant A2A protocol
-│
-└─ YES: Use AsyncAgent
-    └─ User can close tab and return later
-    └─ Progress persists in database
-    └─ No timeout constraints
-```
-
-**Quick Reference:**
-
-| Question | StreamingAgent | AsyncAgent |
-|----------|----------------|------------|
-| Task duration? | < 5 minutes | Minutes to hours |
-| User interaction? | Interactive (waits) | Async (can leave) |
-| Updates mechanism? | SSE streaming | POST to backend |
-| Timeout risk? | Yes (~5 min) | No |
-| Standards compliant? | Yes (pure A2A) | Custom extension |
-| Best for? | Chat responses, quick analysis | Batch processing, large datasets |
-
-**Examples:**
-- **StreamingAgent**: Calculator, quick data lookup, real-time analysis
-- **AsyncAgent**: Large file processing, training models, batch operations
 
 ## Core Concepts
 
-### Message Context
+### Agent Context
 
-Both agent types receive a context object with helper methods:
-- **StreamingAgent** receives `StreamingContext` (for SSE updates)
-- **AsyncAgent** receives `BackgroundContext` (for POST updates)
+Your `process_message` method receives an `AgentContext` with helper methods:
 
 ```python
-# For StreamingAgent
-async def process_message(self, message: str, context: StreamingContext) -> str:
+async def process_message(self, message: str, context: AgentContext) -> str:
     # Send progress updates
     await context.update_progress("Working...", 0.5)
 
-    # Add artifacts
+    # Add artifacts (files generated by the agent)
     await context.add_artifact(
         name="Results",
         content=data,
         data_type="application/json"
     )
 
-    # Check cancellation
-    if context.is_cancelled():
-        return "Cancelled by user"
-
     # Access metadata
     user_id = context.user_id
     thread_id = context.thread_id
 
-    # Access file token (if file access enabled)
-    token = context.file_access_token
+    # Access documents API
+    docs = await context.document_client.list_documents()
 
     return "Done!"
 ```
 
 ### Validation
 
-Validate messages **before** processing (or enqueueing for background jobs):
+Validate messages before processing:
 
 ```python
-from health_universe_a2a import ValidationResult
+from health_universe_a2a import ValidationAccepted, ValidationRejected
 
-async def validate_message(self, message: str, metadata: dict) -> ValidationResult:
+async def validate_message(self, message: str, metadata: dict) -> ValidationAccepted | ValidationRejected:
     if len(message) < 10:
-        return ValidationResult(
-            accepted=False,
-            rejection_reason="Message too short (min 10 chars)"
-        )
+        return ValidationRejected(reason="Message too short (min 10 chars)")
 
-    return ValidationResult(
-        accepted=True,
-        estimated_duration_seconds=60  # Optional hint
-    )
+    return ValidationAccepted(estimated_duration_seconds=60)
 ```
-
-**For AsyncAgent**: Validation happens **before** the job is enqueued, preventing invalid jobs from being created.
-
-**For StreamingAgent**: Validation happens before processing starts, immediately rejecting invalid requests.
 
 ### Lifecycle Hooks
 
@@ -226,17 +147,15 @@ async def on_shutdown(self) -> None:
     """Called when agent shuts down"""
     await self.model.unload()
 
-# For StreamingAgent, context is StreamingContext
-# For AsyncAgent, context is BackgroundContext
-async def on_task_start(self, message: str, context) -> None:
+async def on_task_start(self, message: str, context: AgentContext) -> None:
     """Called before processing"""
     self.logger.info(f"Starting task for {context.user_id}")
 
-async def on_task_complete(self, message: str, result: str, context) -> None:
+async def on_task_complete(self, message: str, result: str, context: AgentContext) -> None:
     """Called after successful processing"""
     await self.metrics.increment("tasks_completed")
 
-async def on_task_error(self, message: str, error: Exception, context) -> str | None:
+async def on_task_error(self, message: str, error: Exception, context: AgentContext) -> str | None:
     """Called on error - return custom error message or None for default"""
     if isinstance(error, TimeoutError):
         return "Task timed out. Try a smaller request."
@@ -252,12 +171,8 @@ def get_agent_version(self) -> str:
     """Version string (default: "1.0.0")"""
     return "2.1.0"
 
-def requires_file_access(self) -> bool:
-    """Enable file access extension (default: False)"""
-    return True
-
 def get_max_duration_seconds(self) -> int:
-    """Max duration for AsyncAgent (default: 3600)"""
+    """Max duration hint (default: 3600)"""
     return 7200  # 2 hours
 
 def get_supported_input_formats(self) -> list[str]:
@@ -269,306 +184,52 @@ def get_supported_output_formats(self) -> list[str]:
     return ["text/plain", "application/json"]
 ```
 
-### Declaring Agent Skills
-
-Skills allow you to declare specific capabilities your agent provides in granular detail. Unlike the general agent description, skills define individual functions with their own input/output formats, examples, and tags.
-
-**When to use skills:**
-- Your agent performs multiple distinct operations (e.g., analyze, transform, visualize)
-- You want fine-grained capability discovery
-- Different operations have different input/output requirements
-- You want to provide specific examples for each capability
-
-**Example:**
-
-```python
-from health_universe_a2a import StreamingAgent, AgentSkill
-
-class DataProcessorAgent(StreamingAgent):
-    def get_agent_name(self) -> str:
-        return "Data Processor"
-
-    def get_agent_description(self) -> str:
-        return "Analyzes and visualizes numerical datasets"
-
-    def get_agent_skills(self) -> list[AgentSkill]:
-        """Declare specific skills this agent provides."""
-        return [
-            AgentSkill(
-                id="statistical_analysis",
-                name="Statistical Analysis",
-                description="Performs comprehensive statistical analysis on numerical datasets",
-                tags=["statistics", "analytics", "data-science"],
-                input_modes=["application/json"],
-                output_modes=["application/json", "text/markdown"],
-                examples=["[1, 2, 3, 4, 5]", "[10.5, 20.3, 30.1]"],
-            ),
-            AgentSkill(
-                id="data_visualization",
-                name="Data Visualization",
-                description="Generates histogram and other visualization data",
-                tags=["visualization", "charts", "histogram"],
-                input_modes=["application/json"],
-                output_modes=["application/json"],
-                examples=["[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"],
-            ),
-            AgentSkill(
-                id="report_generation",
-                name="Report Generation",
-                description="Creates human-readable analysis reports",
-                tags=["reporting", "documentation", "markdown"],
-                input_modes=["application/json"],
-                output_modes=["text/markdown"],
-                examples=["[100, 200, 300]"],
-            ),
-        ]
-
-    async def process_message(self, message: str, context: StreamingContext) -> str:
-        # Your implementation can route based on message content
-        # or handle all skills in one unified flow
-        return "Processing complete"
-```
-
-**Skill Properties:**
-- **id**: Unique identifier for the skill (kebab-case recommended)
-- **name**: Human-readable name displayed in UIs
-- **description**: What this specific skill does
-- **tags**: Keywords for discovery and categorization
-- **input_modes**: MIME types this skill accepts (optional, inherits from agent defaults)
-- **output_modes**: MIME types this skill produces (optional, inherits from agent defaults)
-- **examples**: Sample inputs showing how to use this skill
-
-**Note:** Skills are declared in the agent card and visible to clients, but the SDK doesn't automatically route messages to specific skills. Your `process_message()` implementation determines how to handle different operations.
-
 ## Examples
 
 See the `examples/` directory for complete working examples:
 
-### Realtime Examples
-- **[simple_streaming_agent.py](examples/simple_streaming_agent.py)**: Basic calculator showing core concepts
-- **[complex_streaming_agent.py](examples/complex_streaming_agent.py)**: Data analyzer with validation, artifacts, and lifecycle hooks
+- **[medical_classifier.py](examples/medical_classifier.py)**: Simple symptom classifier
+- **[document_inventory.py](examples/document_inventory.py)**: List and inspect thread documents
+- **[protocol_analyzer.py](examples/protocol_analyzer.py)**: Search, download, and analyze documents
+- **[multi_agent_orchestration.py](examples/multi_agent_orchestration.py)**: Multiple agents working together
 
-### Background Examples
-- **[simple_async_agent.py](examples/simple_async_agent.py)**: File processor showing basic background processing
-- **[complex_async_agent.py](examples/complex_async_agent.py)**: Batch processor with validation, batching, and error recovery
+## Inter-Agent Communication
 
-## Advanced Usage
-
-### Custom Extensions
-
-If you need extensions beyond file access and background jobs:
+Call other A2A-compliant agents from your agent:
 
 ```python
-from health_universe_a2a import AgentExtension
+from health_universe_a2a import Agent, AgentContext
 
-def get_extensions(self) -> list[AgentExtension]:
-    extensions = super().get_extensions()  # Get auto-configured extensions
-
-    # Add custom extension
-    extensions.append(AgentExtension(
-        uri="https://example.com/custom-extension/v1",
-        params={"some": "config"},
-        required=False
-    ))
-
-    return extensions
-```
-
-### Error Handling
-
-Control error messages returned to users:
-
-```python
-# For StreamingAgent, context is StreamingContext
-# For AsyncAgent, context is BackgroundContext
-async def on_task_error(self, message: str, error: Exception, context: StreamingContext) -> str | None:
-    # Log error
-    self.logger.error(f"Task failed: {error}", exc_info=True)
-
-    # Return user-friendly error message
-    if isinstance(error, ValueError):
-        return "Invalid input format. Please check your data."
-    elif isinstance(error, TimeoutError):
-        return "Request timed out. Try reducing the data size."
-    elif isinstance(error, MemoryError):
-        return "Out of memory. Please contact support."
-
-    # Return None to use default error message
-    return None
-```
-
-### Cancellation Support
-
-Check for cancellation during long-running operations:
-
-```python
-# For StreamingAgent, context is StreamingContext
-# For AsyncAgent, context is BackgroundContext
-async def process_message(self, message: str, context: StreamingContext) -> str:
-    items = parse_items(message)
-
-    for i, item in enumerate(items):
-        # Check if user cancelled
-        if context.is_cancelled():
-            return f"Cancelled after processing {i} of {len(items)} items"
-
-        await process_item(item)
-        await context.update_progress(f"Processed {i+1}/{len(items)}", (i+1)/len(items))
-
-    return "All items processed!"
-```
-
-### Inter-Agent Communication
-
-Call other A2A-compliant agents from your agent's processing logic:
-
-```python
-from health_universe_a2a import StreamingAgent, StreamingContext
-
-class OrchestratorAgent(StreamingAgent):
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+class OrchestratorAgent(Agent):
+    async def process_message(self, message: str, context: AgentContext) -> str:
         # Call local agent (bypasses ingress/egress)
-        preprocessor_response = await self.call_other_agent(
-            "/preprocessor",  # Local agent path
+        preprocessor_response = await self.call_agent(
+            "/preprocessor",
             message,
             context,
-            timeout=30.0,
         )
 
         # Call with structured data
-        analysis_response = await self.call_other_agent_with_data(
+        analysis_response = await self.call_agent_with_data(
             "/analyzer",
-            {
-                "data": preprocessor_response.text,
-                "mode": "detailed",
-            },
+            {"data": preprocessor_response.text, "mode": "detailed"},
             context,
-            timeout=60.0,
         )
 
-        # Call remote agent with HTTPS
-        remote_response = await self.call_other_agent(
-            "https://api.example.com/validator",
-            analysis_response.text,
-            context,
-            timeout=120.0,
-        )
-
-        return remote_response.text
+        return analysis_response.text
 ```
 
 **Agent Identifier Formats:**
 
-1. **Local agent path**: `/agent-name` → Uses `LOCAL_AGENT_BASE_URL` (default: `http://localhost:8501`)
-2. **Direct URL**: `https://...` → Calls directly with HTTPS
-3. **Registry name**: `agent-name` → Looks up in `AGENT_REGISTRY` environment variable
-
-**Environment Variables:**
-
-```bash
-# Base URL for local agents
-export LOCAL_AGENT_BASE_URL="http://localhost:8501"
-
-# Agent registry (JSON map)
-export AGENT_REGISTRY='{"analyzer": "https://api.example.com/analyzer", "validator": "https://validator.svc.cluster.local"}'
-```
-
-**Features:**
-- **Automatic JWT propagation**: User context flows through agent calls
-- **Retry logic**: Exponential backoff for transient errors (5xx, timeouts)
-- **Structured data**: Use `call_other_agent_with_data()` for JSON/dict payloads
-- **Parallel calls**: Use `asyncio.gather()` for concurrent agent calls
-
-See [examples/inter_agent_example.py](examples/inter_agent_example.py) for comprehensive patterns including parallel processing and error handling.
-
-## Architecture
-
-### How It Works
-
-1. **Agent Declaration**: Agent declares capabilities via `get_agent_name()`, `get_agent_description()`, etc.
-2. **Auto-configuration**: SDK automatically configures extensions based on `requires_file_access()`, agent type, etc.
-3. **Validation**: Optional `validate_message()` runs before processing
-4. **Processing**: Agent's `process_message()` method does the work
-5. **Updates**: Agent calls `context.update_progress()` and `context.add_artifact()` as needed
-6. **Completion**: Agent returns final message
-
-### StreamingAgent Flow
-
-```
-Request → Validate → Process → Stream Updates → Complete
-                                      ↓
-                               Via A2A Protocol (SSE)
-```
-
-### AsyncAgent Flow
-
-```
-Request → Validate → Accept/Reject
-                          ↓
-                    Enqueue Job
-                          ↓
-                  Process in Background → POST Updates → Complete
-                                               ↓
-                                      To Backend Database
-```
-
-## Development
-
-### Setup
-
-```bash
-# Clone repo
-git clone https://github.com/Health-Universe/healthuniverse-a2a-sdk-python
-cd healthuniverse-a2a-sdk-python
-
-# Install with dev dependencies
-uv pip install -e ".[dev]"
-```
-
-### Testing
-
-```bash
-uv run pytest
-```
-
-### Linting
-
-```bash
-uv run ruff check src/
-uv run mypy src/
-```
-
-### Formatting
-
-```bash
-uv run ruff format src/
-```
-
-## Requirements
-
-- Python 3.10+
-- httpx >= 0.27.0
-- pydantic >= 2.0.0
+1. **Local agent path**: `/agent-name` - Uses `LOCAL_AGENT_BASE_URL` (default: `http://localhost:8501`)
+2. **Direct URL**: `https://...` - Calls directly with HTTPS
+3. **Registry name**: `agent-name` - Looks up in `AGENT_REGISTRY` environment variable
 
 ## Running Your Agent
 
 ### Built-in HTTP Server
 
-The SDK includes a built-in HTTP server for running your agents:
-
 ```python
-from health_universe_a2a import StreamingAgent, StreamingContext
-
-class MyAgent(StreamingAgent):
-    def get_agent_name(self) -> str:
-        return "My Agent"
-
-    def get_agent_description(self) -> str:
-        return "Does something useful"
-
-    async def process_message(self, message: str, context: StreamingContext) -> str:
-        return f"Processed: {message}"
-
 if __name__ == "__main__":
     agent = MyAgent()
     agent.serve()  # Starts server on http://0.0.0.0:8000
@@ -581,50 +242,65 @@ The server automatically provides:
 
 ### Server Configuration
 
-Configure via environment variables or method parameters:
-
 ```python
 # Via environment variables
-# HOST=0.0.0.0 PORT=8080 RELOAD=true python my_agent.py
+# HOST=0.0.0.0 PORT=8080 python my_agent.py
 
 # Via method parameters
 agent.serve(host="0.0.0.0", port=8080, reload=True)
 ```
 
-### Advanced Server Usage
+### Multi-Agent Server
 
-For more control, use `create_app()`:
+Run multiple agents in a single server:
 
 ```python
-from health_universe_a2a import create_app
-import uvicorn
+from health_universe_a2a import serve_multi_agents
 
-agent = MyAgent()
-app = create_app(agent)
-
-# Full control over uvicorn
-uvicorn.run(app, host="0.0.0.0", port=8000, workers=4)
+serve_multi_agents({
+    "/orchestrator": OrchestratorAgent(),
+    "/analyzer": AnalyzerAgent(),
+    "/reader": ReaderAgent(),
+}, port=8501)
 ```
 
-See the [examples/](examples/) directory for complete working examples.
+## Development
 
-## Contributing
+### Setup
 
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+```bash
+git clone https://github.com/Health-Universe/healthuniverse-a2a-sdk-python
+cd healthuniverse-a2a-sdk-python
+uv pip install -e ".[dev]"
+```
 
-## License
+### Testing
 
-MIT License - see [LICENSE](LICENSE) for details.
+```bash
+uv run pytest
+```
+
+### Linting and Formatting
+
+```bash
+uv run ruff check src/
+uv run ruff format src/
+uv run mypy src/
+```
+
+## Requirements
+
+- Python 3.10+
+- httpx >= 0.27.0
+- pydantic >= 2.0.0
 
 ## Support
 
-- 📚 [Documentation](https://docs.healthuniverse.com/a2a-sdk)
-- 💬 [Discord Community](https://discord.gg/healthuniverse)
-- 🐛 [Issue Tracker](https://github.com/Health-Universe/healthuniverse-a2a-sdk-python/issues)
-- 📧 [Email Support](mailto:support@healthuniverse.com)
+- [Documentation](https://docs.healthuniverse.com/a2a-sdk)
+- [Issue Tracker](https://github.com/Health-Universe/healthuniverse-a2a-sdk-python/issues)
+- [Email Support](mailto:support@healthuniverse.com)
 
 ## Related Projects
 
 - [Health Universe Platform](https://healthuniverse.com)
 - [A2A Protocol Specification](https://a2a.ai)
-- [A2A TypeScript SDK](https://github.com/Health-Universe/a2a-sdk-typescript)

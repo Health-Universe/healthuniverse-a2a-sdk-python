@@ -7,6 +7,7 @@ for S3 storage via the Health Universe platform.
 
 import logging
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -72,7 +73,7 @@ class NestJSClient:
         }
 
     @asynccontextmanager
-    async def _get_async_client(self) -> Any:
+    async def _get_async_client(self) -> AsyncIterator[httpx.AsyncClient]:
         """Get or create async HTTP client with auth headers."""
         if self._async_client is None:
             self._async_client = httpx.AsyncClient(
@@ -156,7 +157,7 @@ class NestJSClient:
                     response.raise_for_status()
 
                     if response.text:
-                        return response.json()  # type: ignore[no-any-return]
+                        return response.json()
                     return {}
 
                 except httpx.HTTPStatusError as e:
@@ -235,7 +236,7 @@ class NestJSClient:
                 response.raise_for_status()
 
                 if response.text:
-                    return response.json()  # type: ignore[no-any-return]
+                    return response.json()
                 return {}
 
             except httpx.HTTPStatusError as e:

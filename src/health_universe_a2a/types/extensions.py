@@ -14,11 +14,8 @@ logger = logging.getLogger(__name__)
 
 # Extension URIs for Health Universe platform
 
-# File Access Extension v2 (NestJS/S3) - CURRENT
-FILE_ACCESS_EXTENSION_URI_V2: str = "https://healthuniverse.com/ext/file_access/v2"
-
-# File Access Extension v1 (Supabase) - DEPRECATED, use v2
-FILE_ACCESS_EXTENSION_URI: str = FILE_ACCESS_EXTENSION_URI_V2  # Alias for backwards compatibility
+# File Access Extension (NestJS/S3)
+FILE_ACCESS_EXTENSION_URI: str = "https://healthuniverse.com/ext/file_access/v2"
 
 # Background Job Extension
 BACKGROUND_JOB_EXTENSION_URI: str = "https://healthuniverse.com/ext/background_job/v1"
@@ -76,8 +73,8 @@ class FileAccessExtensionParams(BaseModel):
     Parameters for file access extension v2 (NestJS/S3).
 
     Passed in message metadata when the file access extension is enabled.
-    Use these parameters with the NestJSClient or directory_context to
-    access files from S3 storage.
+    The SDK automatically extracts these parameters and provides document
+    access via context.document_client.
 
     Attributes:
         access_token: NestJS JWT for API authentication (marked as SecretStr
@@ -85,14 +82,11 @@ class FileAccessExtensionParams(BaseModel):
         context: Context metadata including user_id and thread_id
 
     Example:
-        # Extract from metadata
-        params = FileAccessExtensionParams.model_validate(
-            metadata[FILE_ACCESS_EXTENSION_URI_V2]
-        )
-
-        # Use with directory_context
-        async with directory_context(params) as tmp_dir:
-            files = os.listdir(tmp_dir)
+        # Document operations are available via context.document_client
+        async def process_message(self, message: str, context: AgentContext) -> str:
+            docs = await context.document_client.list_documents()
+            content = await context.document_client.download_text(docs[0].id)
+            return f"Found {len(docs)} documents"
     """
 
     access_token: SecretStr  # NestJS JWT for API authentication
@@ -198,9 +192,7 @@ def ack_background_job_enqueued(
         context_id=context_id,
         extensions=[BACKGROUND_JOB_EXTENSION_URI],
         metadata={
-            BACKGROUND_JOB_EXTENSION_URI: BackgroundJobExtensionResponse(
-                job_id=job_id
-            ).model_dump()
+            BACKGROUND_JOB_EXTENSION_URI: BackgroundJobExtensionResponse(job_id=job_id).model_dump()
         },
     )
 

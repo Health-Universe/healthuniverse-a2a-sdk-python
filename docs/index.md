@@ -6,7 +6,7 @@ A simple, batteries-included SDK for building A2A-compliant agents on the Health
 
 - **Streaming Agents**: Real-time streaming responses with `StreamingAgent`
 - **Background Jobs**: Long-running tasks with progress updates via `AsyncAgent`
-- **Storage Integration**: S3 storage backend with `directory_context` for file handling
+- **Document Operations**: Read and write documents via `context.document_client`
 - **Inter-Agent Communication**: Call other agents with `InterAgentClient`
 - **Extension Support**: FILE_ACCESS v2, BACKGROUND_JOB, LOG_LEVEL extensions
 

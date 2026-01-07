@@ -16,16 +16,16 @@ from collections.abc import Awaitable
 from typing import Any
 
 from health_universe_a2a import (
-    AgentResponse,
-    StreamingAgent,
-    StreamingContext,
+    Agent,
+    AgentContext,
     ValidationAccepted,
     ValidationRejected,
-    ValidationResult,
 )
+from health_universe_a2a.inter_agent import AgentResponse
+from health_universe_a2a.types.validation import ValidationResult
 
 
-class OrchestratorAgent(StreamingAgent):
+class OrchestratorAgent(Agent):
     """
     Orchestrator agent that coordinates multiple agents.
 
@@ -71,7 +71,7 @@ class OrchestratorAgent(StreamingAgent):
         except json.JSONDecodeError:
             return ValidationRejected(reason="Request must be valid JSON")
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """
         Process request by coordinating multiple agents.
 
@@ -100,7 +100,7 @@ class OrchestratorAgent(StreamingAgent):
         return "Unknown command"
 
     async def _analyze_workflow(
-        self, data: str, options: dict[str, Any], context: StreamingContext
+        self, data: str, options: dict[str, Any], context: AgentContext
     ) -> str:
         """
         Analyze workflow: preprocessor → analyzer → formatter
@@ -162,14 +162,14 @@ class OrchestratorAgent(StreamingAgent):
                 data_type="application/json",
             )
 
-            return formatter_response.text
+            return formatter_response.text or ""
 
         except Exception as e:
             self.logger.error(f"Analysis workflow failed: {e}")
             return f"Analysis failed: {str(e)}"
 
     async def _process_workflow(
-        self, data: str, options: dict[str, Any], context: StreamingContext
+        self, data: str, options: dict[str, Any], context: AgentContext
     ) -> str:
         """
         Process workflow: parallel processors → merger
@@ -217,10 +217,10 @@ class OrchestratorAgent(StreamingAgent):
             context,
         )
 
-        return merger_response.text
+        return merger_response.text or ""
 
     async def _transform_workflow(
-        self, data: str, options: dict[str, Any], context: StreamingContext
+        self, data: str, options: dict[str, Any], context: AgentContext
     ) -> str:
         """
         Transform workflow: local + remote agents

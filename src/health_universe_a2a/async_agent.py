@@ -13,12 +13,10 @@ from health_universe_a2a.base import A2AAgentBase
 from health_universe_a2a.context import BackgroundContext, StreamingContext
 from health_universe_a2a.types.extensions import (
     BACKGROUND_JOB_EXTENSION_URI,
-    FILE_ACCESS_EXTENSION_URI_V2,
+    FILE_ACCESS_EXTENSION_URI,
+    HU_LOG_LEVEL_EXTENSION_URI,
 )
-from health_universe_a2a.types.validation import (
-    ValidationAccepted,
-    ValidationRejected,
-)
+from health_universe_a2a.types.validation import ValidationRejected
 from health_universe_a2a.update_client import (
     BackgroundUpdateClient,
 )
@@ -28,77 +26,63 @@ logger = logging.getLogger(__name__)
 
 class AsyncAgent(A2AAgentBase):
     """
-    Agent for long-running tasks (hours) with async job processing.
+    Agent for Health Universe - the primary agent class.
 
-    **When to Use AsyncAgent:**
-    ✓ Task takes more than 5 minutes
-    ✓ Task might run for hours (up to max_duration_seconds)
-    ✓ Users don't need to wait for completion
-    ✓ You want updates persisted to backend via POST
-    ✓ SSE timeout limits would be exceeded
+    Use this class (or the Agent alias) for all Health Universe agents.
+    All agents run asynchronously with progress updates persisted to the database.
 
-    **Use StreamingAgent instead if:**
-    ✗ Task completes in under 5 minutes
-    ✗ Users expect real-time streaming feedback
+    **Key Features:**
+    - Automatic file access (context.documents provides document operations)
+    - Progress updates stored in database (queryable for billing, analytics)
+    - Long-running tasks (up to max_duration_seconds, default 1 hour)
+    - Inter-agent communication via call_agent() or call_other_agent()
 
-    Key differences from StreamingAgent:
-    - Validation happens BEFORE job is enqueued
-    - Returns immediately after validation with "submitted" status
-    - Processing happens asynchronously
-    - Updates POSTed to backend via /a2a/task-updates endpoint
-    - No SSE streaming timeout constraints
+    **Required Methods:**
+    - get_agent_name(): Return the agent's display name
+    - get_agent_description(): Return what the agent does
+    - process_message(message, context): Process messages and return results
 
-    The agent automatically:
-    - Declares background job extension support
-    - Configures file access extension if requires_file_access() returns True
-    - POSTs progress updates to backend
-    - Handles job lifecycle (validation, enqueueing, async processing)
+    **Optional Methods:**
+    - validate_message(message, metadata): Validate before processing
+    - get_max_duration_seconds(): Override max task duration (default: 1 hour)
 
     Example:
-        from health_universe_a2a import AsyncAgent, BackgroundContext
+        from health_universe_a2a import Agent, AgentContext
         import json
 
-        class HeavyProcessorAgent(AsyncAgent):
+        class DataAnalyzer(Agent):
             def get_agent_name(self) -> str:
-                return "Heavy Processor"
+                return "Clinical Data Analyzer"
 
             def get_agent_description(self) -> str:
-                return "Processes large datasets in background"
+                return "Analyzes clinical datasets and generates insights"
 
-            def requires_file_access(self) -> bool:
-                return True
+            async def process_message(self, message: str, context: AgentContext) -> str:
+                # List documents in the thread
+                docs = await context.documents.list_documents()
 
-            def get_max_duration_seconds(self) -> int:
-                return 7200  # 2 hours
+                # Find and read a specific document
+                for doc in docs:
+                    if "protocol" in doc.name.lower():
+                        content = await context.documents.download_text(doc.id)
+                        break
 
-            async def validate_message(self, message: str, metadata: dict) -> ValidationResult:
-                if "file_uri" not in message:
-                    return ValidationRejected(reason="No file URI provided")
-                return ValidationAccepted(estimated_duration_seconds=3600)
+                # Process with progress updates
+                await context.update_progress("Analyzing data...", 0.5)
+                results = await self.analyze(content)
 
-            async def process_message(
-                self, message: str, context: BackgroundContext
-            ) -> str:
-                await context.update_progress("Loading file...", 0.1)
-                data = await self.load_file(context.file_access_token)
+                # Write results as a new document
+                await context.documents.write(
+                    "Analysis Results",
+                    json.dumps(results, indent=2),
+                    filename="analysis.json"
+                )
 
-                batches = self.split_batches(data, 10)
+                return f"Analysis complete! Found {len(results)} insights."
 
-                for i, batch in enumerate(batches):
-                    await context.update_progress(
-                        f"Processing batch {i+1}/{len(batches)}",
-                        progress=(i+1)/len(batches)
-                    )
-
-                    result = await self.process_batch(batch)
-
-                    await context.add_artifact(
-                        name=f"Batch {i+1} Results",
-                        content=json.dumps(result),
-                        data_type="application/json"
-                    )
-
-                return f"Processed {len(batches)} batches successfully!"
+        if __name__ == "__main__":
+            agent = DataAnalyzer()
+            agent.serve()
 
     Implementation Details:
         - Inherits from A2AAgent and implements AgentExecutor interface
@@ -186,17 +170,24 @@ class AsyncAgent(A2AAgentBase):
         return True
 
     def get_extensions(self) -> list[AgentExtension]:
-        """Auto-configure extensions."""
-        extensions = [
-            # Always add background job extension
-            AgentExtension(uri=BACKGROUND_JOB_EXTENSION_URI)
+        """
+        Auto-configure extensions for Health Universe agents.
+
+        All agents automatically get:
+        - Background job extension (for async processing)
+        - File access v2 extension (for document operations)
+        - Log level extension (for update importance filtering)
+
+        This enables document operations without any configuration:
+            docs = await context.document_client.list_documents()
+            content = await context.document_client.download_text(doc_id)
+            await context.document_client.write("Results", json.dumps(data))
+        """
+        return [
+            AgentExtension(uri=BACKGROUND_JOB_EXTENSION_URI),
+            AgentExtension(uri=FILE_ACCESS_EXTENSION_URI),
+            AgentExtension(uri=HU_LOG_LEVEL_EXTENSION_URI),
         ]
-
-        # Add file access v2 if needed
-        if self.requires_file_access():
-            extensions.append(AgentExtension(uri=FILE_ACCESS_EXTENSION_URI_V2))
-
-        return extensions
 
     def get_max_duration_seconds(self) -> int:
         """
@@ -302,7 +293,7 @@ class AsyncAgent(A2AAgentBase):
             ) -> str | None:
                 self.logger.error(f"Background task failed: {error}")
                 # Can still send updates via POST
-                await context.update_progress("Task failed, cleaning up...", 1.0, status="error")
+                await context.update_progress("Task failed, cleaning up...", 1.0, status=TaskState.failed)
 
                 if isinstance(error, MemoryError):
                     return "Out of memory. Try reducing batch_size parameter."
@@ -350,87 +341,85 @@ class AsyncAgent(A2AAgentBase):
             await context.updater.reject(message=msg)
             return None
 
-        # Step 3: Handle acceptance
-        if isinstance(validation_result, ValidationAccepted):
-            duration_msg = ""
-            if validation_result.estimated_duration_seconds:
-                minutes = validation_result.estimated_duration_seconds // 60
-                duration_msg = (
-                    f" (estimated: {minutes} min)"
-                    if minutes > 0
-                    else f" (estimated: {validation_result.estimated_duration_seconds}s)"
-                )
-
-            ack_message = f"Job submitted successfully{duration_msg}. Processing will continue in the background."
-
-            self.logger.info("Validation passed, sending ack via SSE")
-
-            # Send ack via updater (SSE)
-            ack_metadata: dict[str, Any] = {}
-            if validation_result.estimated_duration_seconds:
-                ack_metadata["estimated_duration_seconds"] = (
-                    validation_result.estimated_duration_seconds
-                )
-
-            text_part = TextPart(text=ack_message)
-            msg = Message(
-                message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=text_part)],
-                metadata=ack_metadata if ack_metadata else None,
-            )
-            # Send submitted status and close SSE connection (final=True)
-            # Background processing will continue with POST updates
-            await context.updater.update_status(
-                state=TaskState.submitted,
-                message=msg,
-                final=True,
-                metadata=ack_metadata if ack_metadata else None,
+        # Step 3: Handle acceptance (validation_result must be ValidationAccepted at this point)
+        duration_msg = ""
+        if validation_result.estimated_duration_seconds:
+            minutes = validation_result.estimated_duration_seconds // 60
+            duration_msg = (
+                f" (estimated: {minutes} min)"
+                if minutes > 0
+                else f" (estimated: {validation_result.estimated_duration_seconds}s)"
             )
 
-            # Step 4: Extract background job params
-            if BACKGROUND_JOB_EXTENSION_URI not in metadata:
-                self.logger.error("Background job extension missing - cannot process async")
-                return ack_message
+        ack_message = f"Job submitted successfully{duration_msg}. Processing will continue in the background."
 
-            from health_universe_a2a.types.extensions import BackgroundJobExtensionParams
+        self.logger.info("Validation passed, sending ack via SSE")
 
-            bg_params = BackgroundJobExtensionParams.model_validate(
-                metadata[BACKGROUND_JOB_EXTENSION_URI]
-            )
-            job_id = bg_params.job_id
-            api_key = bg_params.api_key
-
-            # Step 5: Launch background task (don't await!)
-            # The SSE connection will close immediately after returning ack_message
-            # Background processing continues with POST updates
-            self.logger.info(
-                f"Launching background task for job_id={job_id}, SSE will close after ack"
+        # Send ack via updater (SSE)
+        ack_metadata: dict[str, Any] = {}
+        if validation_result.estimated_duration_seconds:
+            ack_metadata["estimated_duration_seconds"] = (
+                validation_result.estimated_duration_seconds
             )
 
-            # Get task_id and context_id for background updater
-            task_id = context.request_context.task_id or str(uuid.uuid4())
-            context_id = context.request_context.context_id or str(uuid.uuid4())
+        text_part = TextPart(text=ack_message)
+        msg = Message(
+            message_id=str(uuid.uuid4()),
+            role=Role.agent,
+            parts=[Part(root=text_part)],
+            metadata=ack_metadata if ack_metadata else None,
+        )
+        # Send submitted status and close SSE connection (final=True)
+        # Background processing will continue with POST updates
+        await context.updater.update_status(
+            state=TaskState.submitted,
+            message=msg,
+            final=True,
+            metadata=ack_metadata if ack_metadata else None,
+        )
 
-            asyncio.create_task(
-                self._run_background_work(
-                    message=message,
-                    job_id=job_id,
-                    api_key=api_key,
-                    metadata=metadata,
-                    task_id=task_id,
-                    context_id=context_id,
-                    user_id=context.user_id,
-                    thread_id=context.thread_id,
-                    file_access_token=context.file_access_token,
-                    extensions=context.extensions,
-                )
-            )
-
-            # Return immediately - SSE connection closes, background processing continues
+        # Step 4: Extract background job params
+        if BACKGROUND_JOB_EXTENSION_URI not in metadata:
+            self.logger.error("Background job extension missing - cannot process async")
             return ack_message
 
-        return None
+        from health_universe_a2a.types.extensions import BackgroundJobExtensionParams
+
+        bg_params = BackgroundJobExtensionParams.model_validate(
+            metadata[BACKGROUND_JOB_EXTENSION_URI]
+        )
+        job_id = bg_params.job_id
+        api_key = bg_params.api_key
+
+        # Step 5: Launch background task (don't await!)
+        # The SSE connection will close immediately after returning ack_message
+        # Background processing continues with POST updates
+        self.logger.info(
+            f"Launching background task for job_id={job_id}, SSE will close after ack"
+        )
+
+        # Get task_id and context_id for background updater
+        task_id = context.request_context.task_id or str(uuid.uuid4())
+        context_id = context.request_context.context_id or str(uuid.uuid4())
+
+        asyncio.create_task(
+            self._run_background_work(
+                message=message,
+                job_id=job_id,
+                api_key=api_key,
+                metadata=metadata,
+                task_id=task_id,
+                context_id=context_id,
+                user_id=context.user_id,
+                thread_id=context.thread_id,
+                file_access_token=context.file_access_token,
+                auth_token=context.auth_token,
+                extensions=context.extensions,
+            )
+        )
+
+        # Return immediately - SSE connection closes, background processing continues
+        return ack_message
 
     # The actual execute() method would integrate with your A2A SDK here
     # This would handle:
@@ -452,6 +441,7 @@ class AsyncAgent(A2AAgentBase):
         user_id: str | None = None,
         thread_id: str | None = None,
         file_access_token: str | None = None,
+        auth_token: str | None = None,
         extensions: list[str] | None = None,
     ) -> None:
         """
@@ -471,6 +461,7 @@ class AsyncAgent(A2AAgentBase):
             user_id: Optional user ID from request
             thread_id: Optional thread ID from request
             file_access_token: Optional file access token from extensions
+            auth_token: Optional JWT token for inter-agent calls
             extensions: Optional list of extension URIs from message
         """
         # Get the current event loop for sync updates from ThreadPoolExecutor
@@ -492,6 +483,7 @@ class AsyncAgent(A2AAgentBase):
                 user_id=user_id,
                 thread_id=thread_id,
                 file_access_token=file_access_token,
+                auth_token=auth_token,
                 metadata=metadata,
                 extensions=extensions,
                 job_id=job_id,

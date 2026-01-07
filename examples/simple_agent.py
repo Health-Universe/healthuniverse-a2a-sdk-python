@@ -3,7 +3,7 @@
 Simple example agent demonstrating the Health Universe A2A SDK.
 
 This example shows:
-1. Creating a basic agent by subclassing StreamingAgent
+1. Creating a basic agent by subclassing Agent
 2. Implementing required methods (get_agent_name, get_agent_description, process_message)
 3. Starting an HTTP server with agent.serve()
 
@@ -15,11 +15,10 @@ Then test with:
     curl http://localhost:8000/.well-known/agent-card.json
 """
 
-from health_universe_a2a import StreamingContext
-from health_universe_a2a.streaming import StreamingAgent
+from health_universe_a2a import Agent, AgentContext
 
 
-class SimpleEchoAgent(StreamingAgent):
+class SimpleEchoAgent(Agent):
     """A simple agent that echoes messages back with a prefix."""
 
     def get_agent_name(self) -> str:
@@ -31,7 +30,7 @@ class SimpleEchoAgent(StreamingAgent):
     def get_agent_version(self) -> str:
         return "1.0.0"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         """Process a message by echoing it back with a friendly prefix."""
         # You can access context properties
         user = context.user_id or "anonymous"

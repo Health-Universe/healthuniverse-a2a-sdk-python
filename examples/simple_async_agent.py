@@ -3,7 +3,7 @@ Simple Async Agent Example
 
 A file processing agent that demonstrates:
 - Basic AsyncAgent implementation
-- File access extension
+- Document access via context.document_client
 - Progress updates via POST
 - Simple artifact generation
 """
@@ -19,18 +19,15 @@ class FileProcessorAgent(AsyncAgent):
     """
     Simple file processor that demonstrates AsyncAgent basics.
 
-    Processes a CSV file and generates a summary report.
+    Processes files from the thread and generates a summary report.
+    Note: File access is automatically enabled for all AsyncAgents.
     """
 
     def get_agent_name(self) -> str:
         return "Simple File Processor"
 
     def get_agent_description(self) -> str:
-        return "Processes CSV files and generates summary reports in the background"
-
-    def requires_file_access(self) -> bool:
-        """Enable file access to read user files."""
-        return True
+        return "Processes files and generates summary reports in the background"
 
     def get_max_duration_seconds(self) -> int:
         """Allow up to 10 minutes for processing."""
@@ -85,7 +82,7 @@ class FileProcessorAgent(AsyncAgent):
             description=f"Summary of processed file: {file_uri}",
         )
 
-        await context.update_progress("Complete!", 1.0)
+        await context.update_progress("Complete!", 1.0, status="completed")
 
         return f"Successfully processed file with {row_count} rows and {column_count} columns"
 

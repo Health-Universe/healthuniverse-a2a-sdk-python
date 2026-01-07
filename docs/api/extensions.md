@@ -5,18 +5,10 @@
 ### FILE_ACCESS_EXTENSION_URI
 
 ```python
-FILE_ACCESS_EXTENSION_URI = "https://healthuniverse.com/ext/file_access"
+FILE_ACCESS_EXTENSION_URI = "https://healthuniverse.com/ext/file_access/v2"
 ```
 
-Legacy v1 file access extension URI.
-
-### FILE_ACCESS_EXTENSION_URI_V2
-
-```python
-FILE_ACCESS_EXTENSION_URI_V2 = "https://healthuniverse.com/ext/file_access/v2"
-```
-
-V2 file access extension URI (NestJS/S3 backend).
+File access extension URI for document operations via NestJS/S3.
 
 ### BACKGROUND_JOB_EXTENSION_URI
 
