@@ -45,7 +45,6 @@ nav:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
   - Guides:
-    - Streaming Agents: guides/streaming-agents.md
     - Background Jobs: guides/background-jobs.md
     - Inter-Agent Communication: guides/inter-agent.md
   - API Reference:

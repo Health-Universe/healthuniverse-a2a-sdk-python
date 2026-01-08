@@ -22,7 +22,8 @@ Quick Start:
 """
 
 from health_universe_a2a.async_agent import AsyncAgent
-from health_universe_a2a.context import BackgroundContext
+from health_universe_a2a.base import A2AAgentBase
+from health_universe_a2a.context import BackgroundContext, BaseContext
 from health_universe_a2a.documents import Document, DocumentClient
 from health_universe_a2a.server import (
     create_app,
@@ -54,6 +55,8 @@ __all__ = [
     "serve_multi_agents",
     # Aliases (for explicit imports)
     "AsyncAgent",
+    "A2AAgentBase",
     "BackgroundContext",
+    "BaseContext",
     "create_multi_agent_app",
 ]

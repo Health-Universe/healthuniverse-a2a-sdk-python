@@ -1,9 +1,9 @@
 """Tests for update_client module."""
 
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from a2a.types import (
     Artifact,
     Message,
@@ -14,13 +14,13 @@ from a2a.types import (
     TextPart,
 )
 
+from health_universe_a2a.types.extensions import UpdateImportance
 from health_universe_a2a.update_client import (
-    BackgroundUpdateClient,
     BackgroundArtifactQueue,
     BackgroundTaskUpdater,
+    BackgroundUpdateClient,
     create_background_updater,
 )
-from health_universe_a2a.types.extensions import UpdateImportance
 
 
 class TestBackgroundUpdateClient:
@@ -388,7 +388,6 @@ class TestBackgroundTaskUpdater:
     def test_extract_message_text_direct_text_part(self, updater):
         """Test extracting text from direct TextPart."""
         # This tests the fallback case
-        text_part = TextPart(text="Direct text")
         message = Message(
             message_id="msg-1",
             role="agent",  # type: ignore[arg-type]
@@ -611,7 +610,7 @@ class TestBackgroundTaskUpdaterSync:
         # structure that update_status_sync creates
         captured_calls: list[tuple] = []
 
-        original_update_status = updater.update_status
+        _original_update_status = updater.update_status
 
         async def capture_update_status(*args, **kwargs):
             captured_calls.append((args, kwargs))

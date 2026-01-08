@@ -7,3 +7,5 @@
 .vscode
 __pycache__/
 .claude/settings.local.json
+docs/
+site/

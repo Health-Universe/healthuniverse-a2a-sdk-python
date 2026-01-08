@@ -1,9 +1,10 @@
 """Tests for AsyncAgent class."""
 
 import asyncio
-import pytest
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from health_universe_a2a.async_agent import AsyncAgent
 from health_universe_a2a.context import BackgroundContext

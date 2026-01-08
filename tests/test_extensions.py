@@ -1,20 +1,18 @@
 """Tests for types/extensions module."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from a2a.types import TaskState
 
 from health_universe_a2a.types.extensions import (
-    UpdateImportance,
-    FileAccessExtensionContext,
-    FileAccessExtensionParams,
+    BACKGROUND_JOB_EXTENSION_URI,
     BackgroundJobExtensionParams,
-    BackgroundJobExtensionResponse,
     BackgroundTaskResults,
+    FileAccessExtensionParams,
+    UpdateImportance,
     ack_background_job_enqueued,
     notify_on_task_completion,
-    BACKGROUND_JOB_EXTENSION_URI,
 )
 
 

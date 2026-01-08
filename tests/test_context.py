@@ -1,15 +1,16 @@
 """Tests for context module."""
 
 import asyncio
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from health_universe_a2a.context import (
-    BaseContext,
-    BackgroundContext,
     AgentContext,
-    _SSEContext,
+    BackgroundContext,
+    BaseContext,
     StreamingContext,
+    _SSEContext,
 )
 from health_universe_a2a.types.extensions import UpdateImportance
 from health_universe_a2a.update_client import BackgroundUpdateClient
@@ -339,7 +340,6 @@ class TestSSEContext:
     def test_sse_context_has_required_fields(self):
         """Test _SSEContext has updater and request_context fields."""
         # _SSEContext is for internal use only, just verify structure
-        from pydantic.fields import FieldInfo
 
         assert "updater" in _SSEContext.model_fields
         assert "request_context" in _SSEContext.model_fields

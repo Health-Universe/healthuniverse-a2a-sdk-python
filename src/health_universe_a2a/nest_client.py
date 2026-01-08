@@ -9,7 +9,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from pydantic import SecretStr
@@ -157,7 +157,9 @@ class NestJSClient:
                     response.raise_for_status()
 
                     if response.text:
-                        return response.json()
+                        return cast(
+                            dict[str, Any] | list[dict[str, Any]], response.json()
+                        )
                     return {}
 
                 except httpx.HTTPStatusError as e:
@@ -236,7 +238,9 @@ class NestJSClient:
                 response.raise_for_status()
 
                 if response.text:
-                    return response.json()
+                    return cast(
+                        dict[str, Any] | list[dict[str, Any]], response.json()
+                    )
                 return {}
 
             except httpx.HTTPStatusError as e:
@@ -264,7 +268,7 @@ class NestJSClient:
 
         raise RuntimeError(f"Failed after {retries} attempts")
 
-    # ========== Async API Methods ==========
+    # ========== Sync API Methods ==========
 
     async def list_documents(self, thread_id: str) -> list[dict[str, Any]]:
         """
