@@ -20,12 +20,6 @@ A simple, batteries-included Python SDK for building [A2A-compliant agents](http
 uv pip install health-universe-a2a
 ```
 
-For running agents as HTTP servers:
-
-```bash
-uv pip install health-universe-a2a[server]
-```
-
 For development:
 
 ```bash
@@ -84,9 +78,9 @@ class DocumentAnalyzerAgent(Agent):
 
         # Write results back
         await context.document_client.write(
-            filename="analysis_results.json",
+            name="Analysis Results",
             content='{"result": "analysis complete"}',
-            mime_type="application/json",
+            filename="analysis_results.json",
         )
 
         return f"Analyzed {len(documents)} documents"
@@ -188,9 +182,11 @@ def get_supported_output_formats(self) -> list[str]:
 
 See the `examples/` directory for complete working examples:
 
+- **[simple_agent.py](examples/simple_agent.py)**: Basic echo agent
 - **[medical_classifier.py](examples/medical_classifier.py)**: Simple symptom classifier
 - **[document_inventory.py](examples/document_inventory.py)**: List and inspect thread documents
 - **[protocol_analyzer.py](examples/protocol_analyzer.py)**: Search, download, and analyze documents
+- **[physician_followup_agent.py](examples/physician_followup_agent.py)**: SOAP note analysis with OpenAI
 - **[multi_agent_orchestration.py](examples/multi_agent_orchestration.py)**: Multiple agents working together
 
 ## Inter-Agent Communication
@@ -202,21 +198,21 @@ from health_universe_a2a import Agent, AgentContext
 
 class OrchestratorAgent(Agent):
     async def process_message(self, message: str, context: AgentContext) -> str:
-        # Call local agent (bypasses ingress/egress)
-        preprocessor_response = await self.call_agent(
+        # Call with text message
+        preprocessor_result = await self.call_agent(
             "/preprocessor",
             message,
             context,
         )
 
-        # Call with structured data
-        analysis_response = await self.call_agent_with_data(
+        # Call with structured data (dict or list)
+        analysis_result = await self.call_agent(
             "/analyzer",
-            {"data": preprocessor_response.text, "mode": "detailed"},
+            {"data": preprocessor_result, "mode": "detailed"},
             context,
         )
 
-        return analysis_response.text
+        return analysis_result
 ```
 
 **Agent Identifier Formats:**
@@ -293,6 +289,7 @@ uv run mypy src/
 - Python 3.10+
 - httpx >= 0.27.0
 - pydantic >= 2.0.0
+- openai >= 1.0.0
 
 ## Support
 
