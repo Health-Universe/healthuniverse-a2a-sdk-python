@@ -351,7 +351,9 @@ class AsyncAgent(A2AAgentBase):
                 else f" (estimated: {validation_result.estimated_duration_seconds}s)"
             )
 
-        ack_message = f"Job submitted successfully{duration_msg}. Processing will continue in the background."
+        ack_message = (
+            f"Job submitted successfully{duration_msg}. Processing will continue in the background."
+        )
 
         self.logger.info("Validation passed, sending ack via SSE")
 
@@ -394,9 +396,7 @@ class AsyncAgent(A2AAgentBase):
         # Step 5: Launch background task (don't await!)
         # The SSE connection will close immediately after returning ack_message
         # Background processing continues with POST updates
-        self.logger.info(
-            f"Launching background task for job_id={job_id}, SSE will close after ack"
-        )
+        self.logger.info(f"Launching background task for job_id={job_id}, SSE will close after ack")
 
         # Get task_id and context_id for background updater
         task_id = context.request_context.task_id or str(uuid.uuid4())

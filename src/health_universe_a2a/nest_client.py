@@ -157,9 +157,7 @@ class NestJSClient:
                     response.raise_for_status()
 
                     if response.text:
-                        return cast(
-                            dict[str, Any] | list[dict[str, Any]], response.json()
-                        )
+                        return cast(dict[str, Any] | list[dict[str, Any]], response.json())
                     return {}
 
                 except httpx.HTTPStatusError as e:
@@ -238,9 +236,7 @@ class NestJSClient:
                 response.raise_for_status()
 
                 if response.text:
-                    return cast(
-                        dict[str, Any] | list[dict[str, Any]], response.json()
-                    )
+                    return cast(dict[str, Any] | list[dict[str, Any]], response.json())
                 return {}
 
             except httpx.HTTPStatusError as e:

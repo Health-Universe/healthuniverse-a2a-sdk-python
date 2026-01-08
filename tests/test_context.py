@@ -79,9 +79,7 @@ class TestBaseContext:
         """Test create_inter_agent_client creates properly configured client."""
         context = BaseContext(auth_token="jwt-token-123")
 
-        with patch(
-            "health_universe_a2a.inter_agent.InterAgentClient"
-        ) as mock_client_cls:
+        with patch("health_universe_a2a.inter_agent.InterAgentClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client_cls.return_value = mock_client
 
@@ -104,12 +102,8 @@ class TestBaseContext:
         """Test create_inter_agent_client uses LOCAL_AGENT_BASE_URL env var."""
         context = BaseContext()
 
-        with patch.dict(
-            "os.environ", {"LOCAL_AGENT_BASE_URL": "http://agents:9000"}
-        ):
-            with patch(
-                "health_universe_a2a.inter_agent.InterAgentClient"
-            ) as mock_client_cls:
+        with patch.dict("os.environ", {"LOCAL_AGENT_BASE_URL": "http://agents:9000"}):
+            with patch("health_universe_a2a.inter_agent.InterAgentClient") as mock_client_cls:
                 context.create_inter_agent_client("/agent")
 
                 call_kwargs = mock_client_cls.call_args[1]
@@ -119,9 +113,7 @@ class TestBaseContext:
         """Test create_inter_agent_client with custom local_base_url."""
         context = BaseContext()
 
-        with patch(
-            "health_universe_a2a.inter_agent.InterAgentClient"
-        ) as mock_client_cls:
+        with patch("health_universe_a2a.inter_agent.InterAgentClient") as mock_client_cls:
             context.create_inter_agent_client(
                 "/agent",
                 local_base_url="http://custom:8080",
@@ -194,9 +186,7 @@ class TestBackgroundContext:
         """Test document_client is lazily initialized."""
         assert context._documents is None
 
-        with patch(
-            "health_universe_a2a.documents.DocumentClient"
-        ) as mock_client_cls:
+        with patch("health_universe_a2a.documents.DocumentClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client_cls.return_value = mock_client
 
@@ -219,12 +209,8 @@ class TestBackgroundContext:
             file_access_token="file-token",
         )
 
-        with patch.dict(
-            "os.environ", {"HU_NESTJS_URL": "https://custom.api.com"}
-        ):
-            with patch(
-                "health_universe_a2a.documents.DocumentClient"
-            ) as mock_client_cls:
+        with patch.dict("os.environ", {"HU_NESTJS_URL": "https://custom.api.com"}):
+            with patch("health_universe_a2a.documents.DocumentClient") as mock_client_cls:
                 _ = context.document_client
 
                 mock_client_cls.assert_called_once_with(
@@ -481,5 +467,8 @@ class TestContextIntegration:
         assert len(mock_update_client._calls) == 4
         assert mock_update_client._calls[0]["kwargs"]["status_message"] == "Starting analysis..."
         assert mock_update_client._calls[1]["kwargs"]["status_message"] == "Processing data..."
-        assert mock_update_client._calls[2]["kwargs"]["artifact_data"]["name"] == "Intermediate Results"
+        assert (
+            mock_update_client._calls[2]["kwargs"]["artifact_data"]["name"]
+            == "Intermediate Results"
+        )
         assert mock_update_client._calls[3]["kwargs"]["status_message"] == "Finalizing..."

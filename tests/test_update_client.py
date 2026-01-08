@@ -416,9 +416,7 @@ class TestBackgroundTaskUpdater:
             parts=[Part(root=text_part)],
         )
 
-        with patch.object(
-            updater, "_post_status_update", new_callable=AsyncMock
-        ) as mock_post:
+        with patch.object(updater, "_post_status_update", new_callable=AsyncMock) as mock_post:
             await updater.update_status(
                 state=TaskState.working,
                 message=message,
@@ -442,9 +440,7 @@ class TestBackgroundTaskUpdater:
             parts=[Part(root=TextPart(text="Info message"))],
         )
 
-        with patch.object(
-            updater, "_post_status_update", new_callable=AsyncMock
-        ) as mock_post:
+        with patch.object(updater, "_post_status_update", new_callable=AsyncMock) as mock_post:
             await updater.update_status(
                 state=TaskState.working,
                 message=message,
@@ -469,9 +465,7 @@ class TestBackgroundTaskUpdater:
         )
         await queue.enqueue_event(event)
 
-        with patch.object(
-            queue, "flush_artifacts", new_callable=AsyncMock
-        ) as mock_flush:
+        with patch.object(queue, "flush_artifacts", new_callable=AsyncMock) as mock_flush:
             await updater.update_status(
                 state=TaskState.completed,
                 importance=UpdateImportance.INFO,
@@ -482,9 +476,7 @@ class TestBackgroundTaskUpdater:
     @pytest.mark.asyncio
     async def test_update_status_failed_flushes_artifacts(self, updater, queue):
         """Test that failed state flushes artifacts."""
-        with patch.object(
-            queue, "flush_artifacts", new_callable=AsyncMock
-        ) as mock_flush:
+        with patch.object(queue, "flush_artifacts", new_callable=AsyncMock) as mock_flush:
             await updater.update_status(
                 state=TaskState.failed,
                 importance=UpdateImportance.ERROR,

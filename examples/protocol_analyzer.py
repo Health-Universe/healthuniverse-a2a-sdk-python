@@ -45,7 +45,9 @@ class ProtocolAnalyzerAgent(Agent):
     def get_max_duration_seconds(self) -> int:
         return 300  # 5 minutes for protocol analysis
 
-    async def validate_message(self, message: str, metadata: dict[str, Any]) -> ValidationAccepted | ValidationRejected:
+    async def validate_message(
+        self, message: str, metadata: dict[str, Any]
+    ) -> ValidationAccepted | ValidationRejected:
         """Validate that we can access documents."""
         # Simple validation - accept all messages
         return ValidationAccepted(estimated_duration_seconds=60)
@@ -337,7 +339,9 @@ class ProtocolAnalyzerAgent(Agent):
         if source:
             lines.append("---")
             lines.append("")
-            lines.append(f"*Analyzed from: {source.get('name', 'Unknown')} (v{source.get('version', '?')})*")
+            lines.append(
+                f"*Analyzed from: {source.get('name', 'Unknown')} (v{source.get('version', '?')})*"
+            )
 
         return "\n".join(lines)
 

@@ -106,9 +106,7 @@ class AsyncAgentWithHooks(AsyncAgent):
         self.on_start_called = True
         self.start_context = context
 
-    async def on_task_complete(
-        self, message: str, result: str, context: BackgroundContext
-    ) -> None:
+    async def on_task_complete(self, message: str, result: str, context: BackgroundContext) -> None:
         self.on_complete_called = True
         self.complete_context = context
 
@@ -159,9 +157,7 @@ class TestAsyncAgentValidation:
     @pytest.mark.asyncio
     async def test_custom_validation_accepts(self):
         """Test custom validation can accept."""
-        agent = AsyncAgentWithValidation(
-            ValidationAccepted(estimated_duration_seconds=120)
-        )
+        agent = AsyncAgentWithValidation(ValidationAccepted(estimated_duration_seconds=120))
         result = await agent.validate_message("test", {})
         assert isinstance(result, ValidationAccepted)
         assert result.estimated_duration_seconds == 120
@@ -169,9 +165,7 @@ class TestAsyncAgentValidation:
     @pytest.mark.asyncio
     async def test_custom_validation_rejects(self):
         """Test custom validation can reject."""
-        agent = AsyncAgentWithValidation(
-            ValidationRejected(reason="Invalid input")
-        )
+        agent = AsyncAgentWithValidation(ValidationRejected(reason="Invalid input"))
         result = await agent.validate_message("bad input", {})
         assert isinstance(result, ValidationRejected)
         assert result.reason == "Invalid input"

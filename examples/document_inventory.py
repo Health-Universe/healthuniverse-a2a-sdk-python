@@ -100,9 +100,7 @@ class DocumentInventoryAgent(Agent):
         for doc in inventory["documents"]:
             visibility = "visible" if doc["visible_to_user"] else "hidden"
             version_str = f"v{doc['version']}" if doc["version"] else "no version"
-            output_lines.append(
-                f"- **{doc['name']}** ({doc['type']}, {version_str}, {visibility})"
-            )
+            output_lines.append(f"- **{doc['name']}** ({doc['type']}, {version_str}, {visibility})")
             output_lines.append(f"  - Filename: `{doc['filename']}`")
             output_lines.append(f"  - ID: `{doc['id']}`")
             output_lines.append("")
