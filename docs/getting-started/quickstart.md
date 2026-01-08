@@ -2,24 +2,25 @@
 
 This guide walks you through creating your first A2A agent.
 
-## Creating a Streaming Agent
-
-The simplest way to get started is with a `StreamingAgent`:
+## Creating Your First Agent
 
 ```python
-from health_universe_a2a import StreamingAgent, StreamingContext
+from health_universe_a2a import Agent, AgentContext
 
-class EchoAgent(StreamingAgent):
-    name = "echo-agent"
-    description = "Echoes back the user's message"
+class EchoAgent(Agent):
+    def get_agent_name(self) -> str:
+        return "echo-agent"
 
-    async def stream(self, query: str, context: StreamingContext):
-        yield f"You said: {query}"
+    def get_agent_description(self) -> str:
+        return "Echoes back the user's message"
+
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        await context.update_progress("Processing your message...")
+        return f"You said: {message}"
 
 # Run the agent server
 if __name__ == "__main__":
-    from health_universe_a2a import serve
-    serve(EchoAgent())
+    EchoAgent().serve()
 ```
 
 Run it:
@@ -46,36 +47,37 @@ curl -X POST http://localhost:8000/ \
   -d '{"jsonrpc": "2.0", "method": "message/send", "params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "Hello!"}]}}}'
 ```
 
-## Adding Skills
+## Adding Progress Updates
 
-Define what your agent can do:
+Keep users informed during long-running tasks:
 
 ```python
-from health_universe_a2a import StreamingAgent, StreamingContext, AgentSkill
+from health_universe_a2a import Agent, AgentContext, UpdateImportance
 
-class CalculatorAgent(StreamingAgent):
-    name = "calculator"
-    description = "Performs basic math operations"
-    skills = [
-        AgentSkill(
-            id="add",
-            name="Addition",
-            description="Add two numbers together"
-        ),
-        AgentSkill(
-            id="multiply",
-            name="Multiplication",
-            description="Multiply two numbers"
+class AnalysisAgent(Agent):
+    def get_agent_name(self) -> str:
+        return "analysis-agent"
+
+    def get_agent_description(self) -> str:
+        return "Analyzes data with progress updates"
+
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        await context.update_progress("Starting analysis...", progress=0.0)
+
+        # Do some work
+        await context.update_progress("Processing data...", progress=0.5)
+
+        # Important milestone - pushed to Navigator UI
+        await context.update_progress(
+            "Analysis complete!",
+            progress=1.0,
+            importance=UpdateImportance.NOTICE
         )
-    ]
 
-    async def stream(self, query: str, context: StreamingContext):
-        # Parse and handle the query
-        yield f"Calculating: {query}"
+        return "Analysis finished successfully"
 ```
 
 ## Next Steps
 
-- [Streaming Agents](../guides/streaming-agents.md) - Learn about streaming responses
 - [Background Jobs](../guides/background-jobs.md) - Handle long-running tasks
-- [Storage](../guides/storage.md) - Work with files and S3 storage
+- [Inter-Agent Communication](../guides/inter-agent.md) - Call other agents

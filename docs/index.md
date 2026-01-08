@@ -4,8 +4,7 @@ A simple, batteries-included SDK for building A2A-compliant agents on the Health
 
 ## Features
 
-- **Streaming Agents**: Real-time streaming responses with `StreamingAgent`
-- **Background Jobs**: Long-running tasks with progress updates via `AsyncAgent`
+- **Background Jobs**: Long-running tasks with progress updates via `Agent`
 - **Document Operations**: Read and write documents via `context.document_client`
 - **Inter-Agent Communication**: Call other agents with `InterAgentClient`
 - **Extension Support**: FILE_ACCESS v2, BACKGROUND_JOB, LOG_LEVEL extensions
@@ -13,21 +12,22 @@ A simple, batteries-included SDK for building A2A-compliant agents on the Health
 ## Quick Example
 
 ```python
-from health_universe_a2a import StreamingAgent, StreamingContext
+from health_universe_a2a import Agent, AgentContext
 
-class MyAgent(StreamingAgent):
-    name = "my-agent"
-    description = "A simple streaming agent"
+class MyAgent(Agent):
+    def get_agent_name(self) -> str:
+        return "my-agent"
 
-    async def stream(self, query: str, context: StreamingContext):
-        yield "Processing your request..."
-        # Your agent logic here
-        yield f"Result: {query}"
+    def get_agent_description(self) -> str:
+        return "A simple agent"
+
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        await context.update_progress("Processing your request...", progress=0.5)
+        return f"Result: {message}"
 
 # Run the agent
 if __name__ == "__main__":
-    from health_universe_a2a import serve
-    serve(MyAgent())
+    MyAgent().serve()
 ```
 
 ## Installation
@@ -40,17 +40,15 @@ See the [Installation Guide](getting-started/installation.md) for detailed setup
 
 ## Architecture
 
-The SDK provides three main agent types:
+The SDK provides two main classes:
 
-| Agent Type | Use Case | Response Style |
-|------------|----------|----------------|
-| `StreamingAgent` | Real-time interactions | SSE streaming |
-| `AsyncAgent` | Long-running tasks | Background webhook updates |
-| `A2AAgentBase` | Custom implementations | Flexible |
+| Class | Use Case | Description |
+|-------|----------|-------------|
+| `Agent` | All agents | Main class for building agents (alias for `AsyncAgent`) |
+| `A2AAgentBase` | Custom implementations | Abstract base class for advanced customization |
 
 ## Next Steps
 
 - [Quick Start](getting-started/quickstart.md) - Build your first agent
-- [Streaming Agents](guides/streaming-agents.md) - Real-time responses
-- [Background Jobs](guides/background-jobs.md) - Long-running tasks
+- [Background Jobs](guides/background-jobs.md) - Long-running tasks with progress updates
 - [API Reference](api/agents.md) - Full API documentation
