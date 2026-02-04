@@ -16,17 +16,21 @@ A simple, batteries-included Python SDK for building [A2A-compliant agents](http
 
 ## Installation
 
+Install directly from the public GitHub repository:
+
 ```bash
-uv pip install health-universe-a2a
+uv pip install git+https://github.com/Health-Universe/healthuniverse-a2a-sdk-python.git
 ```
 
 For development:
 
 ```bash
-uv pip install health-universe-a2a[dev]
+git clone https://github.com/Health-Universe/healthuniverse-a2a-sdk-python.git
+cd healthuniverse-a2a-sdk-python
+uv pip install -e ".[dev]"
 ```
 
-> **Note:** Using [uv](https://github.com/astral-sh/uv) is recommended for faster, more reliable dependency management. If you don't have uv installed, you can use `pip` instead.
+> **Note:** Using [uv](https://github.com/astral-sh/uv) is recommended for faster, more reliable dependency management. You can also use `pip install git+...` if preferred.
 
 ## Quick Start
 

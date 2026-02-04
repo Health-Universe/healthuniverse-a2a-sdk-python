@@ -104,22 +104,23 @@ uv run pytest -v
 Example:
 ```python
 import pytest
-from health_universe_a2a import StreamingAgent
+from health_universe_a2a import Agent, AgentContext
 
-def test_streaming_agent_supports_streaming():
-    """StreamingAgent should enable streaming by default."""
-    class TestAgent(StreamingAgent):
+def test_agent_basic_configuration():
+    """Agent should have correct basic configuration."""
+    class TestAgent(Agent):
         def get_agent_name(self) -> str:
             return "Test"
 
         def get_agent_description(self) -> str:
             return "Test agent"
 
-        async def process_message(self, message: str, context) -> str:
+        async def process_message(self, message: str, context: AgentContext) -> str:
             return "done"
 
     agent = TestAgent()
-    assert agent.supports_streaming() is True
+    assert agent.get_agent_name() == "Test"
+    assert agent.supports_push_notifications() is True
 ```
 
 ## Pull Request Process
@@ -137,8 +138,8 @@ def test_streaming_agent_supports_streaming():
    ```
    feat: Add validation hook to base agent
 
-   - Add validate_message() method to A2AAgent
-   - Update StreamingAgent to call validation before processing
+   - Add validate_message() method to Agent
+   - Update Agent to call validation before processing
    - Add example showing validation usage
 
    Closes #123
@@ -172,9 +173,9 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 Examples:
 ```
-feat: Add AsyncAgent class for long-running tasks
-fix: Handle cancellation in StreamingAgent properly
-docs: Update README with AsyncAgent examples
+feat: Add document operations to Agent
+fix: Handle cancellation in Agent properly
+docs: Update README with Agent examples
 test: Add tests for validation hook
 refactor: Extract context building to separate method
 chore: Update dependencies

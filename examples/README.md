@@ -16,7 +16,7 @@ uv pip install -e ".[server]"
 ### 1. Simple Echo Agent (`simple_agent.py`)
 
 A minimal agent that demonstrates the basics:
-- Creating an agent by subclassing `A2AAgent`
+- Creating an agent by subclassing `Agent`
 - Implementing required methods
 - Starting an HTTP server with `agent.serve()`
 
@@ -83,12 +83,18 @@ PORT=8080 RELOAD=true python examples/simple_agent.py
 Instead of using `agent.serve()`, you can create the app and run it manually:
 
 ```python
-from health_universe_a2a import A2AAgent, create_app
+from health_universe_a2a import Agent, AgentContext, create_app
 import uvicorn
 
-class MyAgent(A2AAgent):
-    # ... implement methods ...
-    pass
+class MyAgent(Agent):
+    def get_agent_name(self) -> str:
+        return "My Agent"
+
+    def get_agent_description(self) -> str:
+        return "Does something useful"
+
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        return f"Processed: {message}"
 
 agent = MyAgent()
 app = create_app(agent)

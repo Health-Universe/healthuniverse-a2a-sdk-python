@@ -33,7 +33,7 @@ if __name__ == "__main__":
 ## Installation
 
 ```bash
-pip install health-universe-a2a
+uv pip install git+https://github.com/Health-Universe/healthuniverse-a2a-sdk-python.git
 ```
 
 See the [Installation Guide](getting-started/installation.md) for detailed setup instructions.

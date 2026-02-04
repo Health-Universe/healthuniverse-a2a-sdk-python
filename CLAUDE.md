@@ -12,37 +12,31 @@ This SDK provides a batteries-included framework for building A2A (Agent-to-Agen
 
 ## Architecture
 
-### Agent Types
+### Agent Class
 
-Choose based on task duration and user experience requirements:
+All Health Universe agents use the `Agent` class (alias for `AsyncAgent`):
 
-**StreamingAgent** - Short-running tasks (< 5 minutes)
-- Real-time SSE streaming updates to user
-- Synchronous request/response model
-- Use when: users expect immediate feedback, task completes quickly
-
-**AsyncAgent** - Long-running tasks (minutes to hours)
+**Agent** - The primary agent class for all use cases
 - Dual-phase execution: validation via SSE, processing via POST
 - Background job processing that survives browser disconnection
-- Use when: processing takes > 5 minutes, users don't need to wait
+- Progress updates stored in database (queryable for billing, analytics)
+- Supports both short and long-running tasks (up to `get_max_duration_seconds()`)
 
 ### Context Objects
 
-Three-tier context hierarchy:
+The primary context for agents is `AgentContext` (alias for `BackgroundContext`):
 
 ```
 BaseContext (user_id, thread_id, file_access_token, auth_token, metadata)
-    ├── StreamingContext (+updater for SSE)
-    └── BackgroundContext (+update_client for POST, +job_id, +loop for sync)
+    └── AgentContext/BackgroundContext (+update_client for POST, +job_id, +loop for sync)
 ```
 
-**StreamingContext** methods:
-- `update_progress(message, progress, status, importance)` - Send SSE update
+**AgentContext** methods:
+- `update_progress(message, progress, status, importance)` - Send progress update
 - `add_artifact(name, content, data_type)` - Generate downloadable artifact
 - `is_cancelled()` - Check if task was cancelled
 - `create_inter_agent_client(agent_id)` - Create client for calling other agents
-
-**BackgroundContext** additional methods:
+- `document_client` - Access to DocumentClient for file operations
 - `update_progress_sync(message, progress, importance)` - Sync wrapper for ThreadPoolExecutor
 
 ### Extensions System
@@ -73,7 +67,7 @@ Health Universe platform extensions declared via `get_extensions()`:
 
 ### Naming Conventions
 
-- Classes: `PascalCase` (e.g., `StreamingAgent`, `BackgroundContext`)
+- Classes: `PascalCase` (e.g., `Agent`, `AgentContext`, `DocumentClient`)
 - Functions/methods: `snake_case` (e.g., `process_message`, `update_progress`)
 - Constants: `SCREAMING_SNAKE_CASE` (e.g., `FILE_ACCESS_EXTENSION_URI`)
 - Private members: `_leading_underscore` (e.g., `_cancelled`, `_extract_message`)
@@ -119,15 +113,17 @@ mock_updater.complete = AsyncMock()
 
 **Mock context for agent tests:**
 ```python
-from health_universe_a2a import StreamingContext
+from health_universe_a2a.context import BackgroundContext
 
-context = StreamingContext(
+context = BackgroundContext(
     user_id="test-user",
     thread_id="test-thread",
     file_access_token=None,
     auth_token=None,
     metadata={},
-    updater=mock_updater,
+    update_client=mock_update_client,
+    job_id="test-job",
+    loop=asyncio.get_event_loop(),
 )
 ```
 
@@ -167,10 +163,17 @@ async def process_message(self, message: str, context: AgentContext) -> str:
 ### Inter-Agent Communication
 
 ```python
-# Method 1: Via context (recommended)
+# Method 1: Via call_agent (recommended)
 response = await self.call_agent("other-agent", message, context)
 
-# Method 2: Via A2AClient directly
+# Method 2: With structured data (dict/list)
+response = await self.call_agent(
+    "processor-agent",
+    {"query": message, "format": "json"},
+    context
+)
+
+# Method 3: Via InterAgentClient directly (for more control)
 from health_universe_a2a.inter_agent import InterAgentClient
 
 client = InterAgentClient.from_registry("other-agent")
@@ -178,13 +181,6 @@ try:
     result = await client.call(message)
 finally:
     await client.close()
-
-# Method 3: With structured data
-response = await self.call_agent_with_data(
-    "processor-agent",
-    {"query": message, "format": "json"},
-    context
-)
 ```
 
 ### Background Job Acknowledgment
@@ -320,16 +316,16 @@ async def handle_request(self, message, context, metadata):
 ### Minimal Agent Implementation
 
 ```python
-from health_universe_a2a import StreamingAgent, StreamingContext
+from health_universe_a2a import Agent, AgentContext
 
-class MyAgent(StreamingAgent):
+class MyAgent(Agent):
     def get_agent_name(self) -> str:
         return "My Agent"
 
     def get_agent_description(self) -> str:
         return "Does something useful"
 
-    async def process_message(self, message: str, context: StreamingContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         await context.update_progress("Processing...", 0.5)
         result = await self.do_work(message)
         return f"Result: {result}"

@@ -4,20 +4,22 @@ Get started with the Health Universe A2A SDK in 5 minutes!
 
 ## Installation
 
+Install directly from the public GitHub repository:
+
 ```bash
-uv pip install health-universe-a2a
+uv pip install git+https://github.com/Health-Universe/healthuniverse-a2a-sdk-python.git
 ```
 
-> **Note:** Using [uv](https://github.com/astral-sh/uv) is recommended for faster dependency management. You can also use `pip` if preferred.
+> **Note:** Using [uv](https://github.com/astral-sh/uv) is recommended for faster dependency management. You can also use `pip install git+...` if preferred.
 
 ## Your First Agent
 
 Create a file `my_agent.py`:
 
 ```python
-from health_universe_a2a import StreamingAgent, MessageContext
+from health_universe_a2a import Agent, AgentContext
 
-class GreetingAgent(StreamingAgent):
+class GreetingAgent(Agent):
     """A simple greeting agent."""
 
     def get_agent_name(self) -> str:
@@ -26,7 +28,7 @@ class GreetingAgent(StreamingAgent):
     def get_agent_description(self) -> str:
         return "Greets users by name"
 
-    async def process_message(self, message: str, context: MessageContext) -> str:
+    async def process_message(self, message: str, context: AgentContext) -> str:
         # Extract name from message
         name = message.strip()
 
@@ -38,32 +40,33 @@ class GreetingAgent(StreamingAgent):
 
         # Return final message
         return greeting
+
+if __name__ == "__main__":
+    GreetingAgent().serve()
 ```
 
 That's it! You've created your first A2A agent.
 
-## Testing Locally
+## Running Your Agent
 
-To test your agent, you'll need to integrate it with an A2A server. Here's a minimal example:
+```bash
+uv run python my_agent.py
+```
 
-```python
-# test_agent.py
-import asyncio
-from my_agent import GreetingAgent
-from health_universe_a2a import MessageContext
+Your agent is now running at `http://localhost:8000`.
 
-async def test():
-    agent = GreetingAgent()
+### Test the Agent Card
 
-    # Create a mock context
-    context = MessageContext(user_id="test-user")
+```bash
+curl http://localhost:8000/.well-known/agent.json
+```
 
-    # Test the agent
-    result = await agent.process_message("Alice", context)
-    print(result)  # Output: Hello, Alice! Welcome to Health Universe!
+### Send a Message
 
-if __name__ == "__main__":
-    asyncio.run(test())
+```bash
+curl -X POST http://localhost:8000/ \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "message/send", "params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "Alice"}]}}}'
 ```
 
 ## Next Steps
@@ -73,22 +76,28 @@ if __name__ == "__main__":
 Validate input before processing:
 
 ```python
-from health_universe_a2a import ValidationResult
+from health_universe_a2a import Agent, AgentContext, ValidationAccepted, ValidationRejected
 
-async def validate_message(self, message: str, metadata: dict) -> ValidationResult:
-    if not message.strip():
-        return ValidationResult(
-            accepted=False,
-            rejection_reason="Name cannot be empty"
-        )
+class ValidatedAgent(Agent):
+    def get_agent_name(self) -> str:
+        return "Validated Agent"
 
-    if len(message) > 50:
-        return ValidationResult(
-            accepted=False,
-            rejection_reason="Name too long (max 50 chars)"
-        )
+    def get_agent_description(self) -> str:
+        return "An agent with input validation"
 
-    return ValidationResult(accepted=True)
+    async def validate_message(
+        self, message: str, metadata: dict
+    ) -> ValidationAccepted | ValidationRejected:
+        if not message.strip():
+            return ValidationRejected(reason="Name cannot be empty")
+
+        if len(message) > 50:
+            return ValidationRejected(reason="Name too long (max 50 chars)")
+
+        return ValidationAccepted(estimated_duration_seconds=30)
+
+    async def process_message(self, message: str, context: AgentContext) -> str:
+        return f"Hello, {message.strip()}!"
 ```
 
 ### Add Artifacts
@@ -98,7 +107,7 @@ Generate downloadable results:
 ```python
 import json
 
-async def process_message(self, message: str, context: MessageContext) -> str:
+async def process_message(self, message: str, context: AgentContext) -> str:
     name = message.strip()
 
     # Generate greeting
@@ -109,7 +118,7 @@ async def process_message(self, message: str, context: MessageContext) -> str:
         name="Greeting Card",
         content=json.dumps({
             "greeting": greeting,
-            "timestamp": "2025-01-01T12:00:00Z"
+            "recipient": name
         }),
         data_type="application/json"
     )
@@ -117,34 +126,27 @@ async def process_message(self, message: str, context: MessageContext) -> str:
     return greeting
 ```
 
-### Use Background Processing
+### Work with Documents
 
-For long-running tasks, switch to `AsyncAgent`:
+Read and write documents in the thread:
 
 ```python
-from health_universe_a2a import AsyncAgent, AsyncContext
+async def process_message(self, message: str, context: AgentContext) -> str:
+    # List all documents in the thread
+    documents = await context.document_client.list_documents()
 
-class DataProcessorAgent(AsyncAgent):
-    def get_agent_name(self) -> str:
-        return "Data Processor"
+    # Download a document
+    if documents:
+        content = await context.document_client.download_text(documents[0].id)
 
-    def get_agent_description(self) -> str:
-        return "Processes large datasets in background"
+    # Write a new document
+    await context.document_client.write(
+        name="Analysis Results",
+        content='{"status": "complete"}',
+        filename="results.json"
+    )
 
-    def get_max_duration_seconds(self) -> int:
-        return 3600  # 1 hour
-
-    async def process_message(self, message: str, context: AsyncContext) -> str:
-        # Process in batches
-        for i in range(10):
-            await context.update_progress(
-                f"Processing batch {i+1}/10",
-                progress=(i+1)/10
-            )
-
-            # ... do work ...
-
-        return "Processing complete!"
+    return f"Processed {len(documents)} documents"
 ```
 
 ## Common Patterns
@@ -152,16 +154,17 @@ class DataProcessorAgent(AsyncAgent):
 ### Progress Updates
 
 ```python
-from a2a.types import TaskState
+from health_universe_a2a import UpdateImportance
 
 # Simple progress
 await context.update_progress("Working...", 0.5)
 
-# With custom status
-await context.update_progress("Processing batch 3/10", 0.3, status=TaskState.working)
-
-# Mark as completed
-await context.update_progress("Done", 1.0, status=TaskState.completed)
+# Important milestone (pushed to Navigator UI)
+await context.update_progress(
+    "Analysis complete!",
+    1.0,
+    importance=UpdateImportance.NOTICE
+)
 ```
 
 ### Multiple Artifacts
@@ -185,7 +188,7 @@ await context.add_artifact(
 ### Error Handling
 
 ```python
-async def process_message(self, message: str, context: MessageContext) -> str:
+async def process_message(self, message: str, context: AgentContext) -> str:
     try:
         result = await risky_operation(message)
         return f"Success: {result}"
@@ -201,7 +204,7 @@ async def process_message(self, message: str, context: MessageContext) -> str:
 ### Cancellation
 
 ```python
-async def process_message(self, message: str, context: MessageContext) -> str:
+async def process_message(self, message: str, context: AgentContext) -> str:
     items = parse_items(message)
 
     for i, item in enumerate(items):
@@ -218,10 +221,10 @@ async def process_message(self, message: str, context: MessageContext) -> str:
 
 Check out the [examples/](examples/) directory for complete working examples:
 
-- **Simple Realtime**: [simple_streaming_agent.py](examples/simple_streaming_agent.py) - Calculator agent
-- **Complex Realtime**: [complex_streaming_agent.py](examples/complex_streaming_agent.py) - Data analyzer
-- **Simple Background**: [simple_async_agent.py](examples/simple_async_agent.py) - File processor
-- **Complex Background**: [complex_async_agent.py](examples/complex_async_agent.py) - Batch processor
+- **[simple_agent.py](examples/simple_agent.py)**: Basic echo agent
+- **[medical_classifier.py](examples/medical_classifier.py)**: Simple symptom classifier
+- **[document_inventory.py](examples/document_inventory.py)**: List and inspect thread documents
+- **[protocol_analyzer.py](examples/protocol_analyzer.py)**: Search, download, and analyze documents
 
 ## Documentation
 
@@ -229,7 +232,6 @@ Full documentation available at: https://docs.healthuniverse.com/a2a-sdk
 
 ## Need Help?
 
-- 📚 Read the [full README](README.md)
-- 💬 Join [Discord](https://discord.gg/healthuniverse)
-- 🐛 Report issues on [GitHub](https://github.com/Health-Universe/healthuniverse-a2a-sdk-python/issues)
-- 📧 Email [support@healthuniverse.com](mailto:support@healthuniverse.com)
+- Read the [full README](README.md)
+- Report issues on [GitHub](https://github.com/Health-Universe/healthuniverse-a2a-sdk-python/issues)
+- Email [support@healthuniverse.com](mailto:support@healthuniverse.com)
