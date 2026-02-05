@@ -31,13 +31,26 @@ class TestBackgroundUpdateClient:
         client = BackgroundUpdateClient(
             job_id="job-123",
             api_key="api-key",
-            base_url="https://api.example.com/",
+            job_status_update_url="https://status.example.com",
+            job_results_url="https://results.example.com",
         )
 
         assert client.job_id == "job-123"
         assert client.api_key == "api-key"
-        assert client.base_url == "https://api.example.com"  # Trailing slash stripped
+        assert client.job_status_update_url == "https://status.example.com"
+        assert client.job_results_url == "https://results.example.com"
         assert client.client is not None
+
+    def test_initialization_no_urls(self):
+        """Test client initialization without URLs."""
+        client = BackgroundUpdateClient(
+            job_id="job-123",
+            api_key="api-key",
+        )
+
+        assert client.job_id == "job-123"
+        assert client.job_status_update_url is None
+        assert client.job_results_url is None
 
     @pytest.mark.asyncio
     async def test_post_update_success(self):
@@ -45,7 +58,7 @@ class TestBackgroundUpdateClient:
         client = BackgroundUpdateClient(
             job_id="job-123",
             api_key="api-key",
-            base_url="https://api.example.com",
+            job_status_update_url="https://status.example.com",
         )
 
         mock_response = MagicMock()
@@ -62,7 +75,7 @@ class TestBackgroundUpdateClient:
 
             mock_post.assert_called_once()
             call_args = mock_post.call_args
-            assert call_args[0][0] == "https://api.example.com/a2a/task-updates"
+            assert call_args[0][0] == "https://status.example.com"
             assert call_args[1]["json"]["job_id"] == "job-123"
             assert call_args[1]["json"]["update_type"] == "progress"
             assert call_args[1]["json"]["progress"] == 0.5
@@ -72,12 +85,32 @@ class TestBackgroundUpdateClient:
         await client.close()
 
     @pytest.mark.asyncio
+    async def test_post_update_no_url_skips(self):
+        """Test POST update is skipped when no URL is configured."""
+        client = BackgroundUpdateClient(
+            job_id="job-123",
+            api_key="api-key",
+            job_status_update_url=None,
+        )
+
+        with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
+            await client.post_update(
+                update_type="progress",
+                progress=0.5,
+                status_message="Processing...",
+            )
+
+            mock_post.assert_not_called()
+
+        await client.close()
+
+    @pytest.mark.asyncio
     async def test_post_update_with_all_params(self):
         """Test POST update with all parameters."""
         client = BackgroundUpdateClient(
             job_id="job-123",
             api_key="api-key",
-            base_url="https://api.example.com",
+            job_status_update_url="https://status.example.com",
         )
 
         mock_response = MagicMock()
@@ -110,7 +143,7 @@ class TestBackgroundUpdateClient:
         client = BackgroundUpdateClient(
             job_id="job-123",
             api_key="api-key",
-            base_url="https://api.example.com",
+            job_status_update_url="https://status.example.com",
         )
 
         with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
@@ -127,7 +160,7 @@ class TestBackgroundUpdateClient:
         client = BackgroundUpdateClient(
             job_id="job-123",
             api_key="api-key",
-            base_url="https://api.example.com",
+            job_status_update_url="https://status.example.com",
         )
 
         with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
@@ -144,19 +177,40 @@ class TestBackgroundUpdateClient:
         client = BackgroundUpdateClient(
             job_id="job-123",
             api_key="api-key",
-            base_url="https://api.example.com",
+            job_results_url="https://results.example.com",
         )
 
-        with patch.object(client, "post_update", new_callable=AsyncMock) as mock_post:
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
             await client.post_completion("Task finished successfully")
 
-            mock_post.assert_called_once_with(
-                update_type="status",
-                task_status="completed",
-                status_message="Task finished successfully",
-                progress=1.0,
-                importance=UpdateImportance.NOTICE,
-            )
+            mock_post.assert_called_once()
+            call_args = mock_post.call_args
+            assert call_args[0][0] == "https://results.example.com"
+            assert call_args[1]["json"]["job_id"] == "job-123"
+            assert call_args[1]["json"]["task_status"] == "completed"
+            assert call_args[1]["json"]["status_message"] == "Task finished successfully"
+            assert call_args[1]["json"]["progress"] == 1.0
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_post_completion_no_url_skips(self):
+        """Test post_completion is skipped when no URL is configured."""
+        client = BackgroundUpdateClient(
+            job_id="job-123",
+            api_key="api-key",
+            job_results_url=None,
+        )
+
+        with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
+            await client.post_completion("Task finished successfully")
+
+            mock_post.assert_not_called()
 
         await client.close()
 
@@ -166,18 +220,39 @@ class TestBackgroundUpdateClient:
         client = BackgroundUpdateClient(
             job_id="job-123",
             api_key="api-key",
-            base_url="https://api.example.com",
+            job_results_url="https://results.example.com",
         )
 
-        with patch.object(client, "post_update", new_callable=AsyncMock) as mock_post:
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
             await client.post_failure("Something went wrong")
 
-            mock_post.assert_called_once_with(
-                update_type="status",
-                task_status="failed",
-                status_message="Task failed: Something went wrong",
-                importance=UpdateImportance.ERROR,
-            )
+            mock_post.assert_called_once()
+            call_args = mock_post.call_args
+            assert call_args[0][0] == "https://results.example.com"
+            assert call_args[1]["json"]["job_id"] == "job-123"
+            assert call_args[1]["json"]["task_status"] == "failed"
+            assert call_args[1]["json"]["status_message"] == "Task failed: Something went wrong"
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_post_failure_no_url_skips(self):
+        """Test post_failure is skipped when no URL is configured."""
+        client = BackgroundUpdateClient(
+            job_id="job-123",
+            api_key="api-key",
+            job_results_url=None,
+        )
+
+        with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
+            await client.post_failure("Something went wrong")
+
+            mock_post.assert_not_called()
 
         await client.close()
 
@@ -187,7 +262,6 @@ class TestBackgroundUpdateClient:
         client = BackgroundUpdateClient(
             job_id="job-123",
             api_key="api-key",
-            base_url="https://api.example.com",
         )
 
         with patch.object(client.client, "aclose", new_callable=AsyncMock) as mock_close:
@@ -678,21 +752,14 @@ class TestCreateBackgroundUpdater:
         assert updater.loop == loop
         loop.close()
 
-    def test_uses_env_vars_for_urls(self):
-        """Test factory uses environment variables for URLs."""
-        with patch.dict(
-            "os.environ",
-            {
-                "JOB_STATUS_UPDATE_URL": "https://env-status.example.com",
-                "JOB_RESULTS_URL": "https://env-results.example.com",
-            },
-        ):
-            updater = create_background_updater(
-                api_key="api-key",
-                job_id="job-123",
-                task_id="task-456",
-                context_id="ctx-789",
-            )
+    def test_no_urls_when_not_provided(self):
+        """Test factory uses None for URLs when not provided."""
+        updater = create_background_updater(
+            api_key="api-key",
+            job_id="job-123",
+            task_id="task-456",
+            context_id="ctx-789",
+        )
 
-            assert updater._event_queue.job_status_update_url == "https://env-status.example.com"
-            assert updater._event_queue.job_results_url == "https://env-results.example.com"
+        assert updater._event_queue.job_status_update_url is None
+        assert updater._event_queue.job_results_url is None

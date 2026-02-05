@@ -61,6 +61,24 @@ class TestBackgroundJobExtensionParams:
 
         assert params.api_key == "api-key-123"
         assert params.job_id == "job-456"
+        assert params.job_status_update_url is None
+        assert params.job_results_url is None
+
+    def test_model_validate_with_callback_urls(self):
+        """Test creating params with callback URLs from platform."""
+        data = {
+            "api_key": "api-key-123",
+            "job_id": "job-456",
+            "job_status_update_url": "https://status.example.com",
+            "job_results_url": "https://results.example.com",
+        }
+
+        params = BackgroundJobExtensionParams.model_validate(data)
+
+        assert params.api_key == "api-key-123"
+        assert params.job_id == "job-456"
+        assert params.job_status_update_url == "https://status.example.com"
+        assert params.job_results_url == "https://results.example.com"
 
 
 class TestBackgroundTaskResults:
@@ -168,25 +186,17 @@ class TestNotifyOnTaskCompletion:
             assert call_args[1]["headers"]["X-Api-Key"] == "api-key-123"
 
     @pytest.mark.asyncio
-    async def test_sends_notification_with_default_url(self, task_results):
-        """Test notification uses default URL from env."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
+    async def test_skips_notification_when_no_url(self, task_results):
+        """Test notification is skipped when no URL is provided."""
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            await notify_on_task_completion(
+                api_key="api-key-123",
+                result=task_results,
+                url=None,
+            )
 
-        with patch.dict("os.environ", {"CALLBACK_URL": "https://env-callback.com"}):
-            with patch("httpx.AsyncClient") as mock_client_cls:
-                mock_client = AsyncMock()
-                mock_client.post = AsyncMock(return_value=mock_response)
-                mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_client_cls.return_value.__aexit__ = AsyncMock()
-
-                await notify_on_task_completion(
-                    api_key="api-key-123",
-                    result=task_results,
-                )
-
-                call_args = mock_client.post.call_args
-                assert call_args[0][0] == "https://env-callback.com"
+            # Should not have created any HTTP client when no URL provided
+            mock_client_cls.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handles_non_200_response(self, task_results):

@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 import uuid
 from abc import abstractmethod
 from typing import Any
@@ -105,7 +104,7 @@ class AsyncAgent(A2AAgentBase):
         **Phase 2: Background Processing (POST)**
         1. asyncio.create_task() launches _run_background_work() asynchronously
         2. Task runs independently (not awaited by request handler)
-        3. All progress updates sent via POST to /a2a/task-updates endpoint
+        3. All progress updates sent via POST to callback URLs (from platform)
         4. Updates persist in database, survives server restarts
         5. On completion: Final POST with results
         6. On error: POST with error details
@@ -392,6 +391,8 @@ class AsyncAgent(A2AAgentBase):
         )
         job_id = bg_params.job_id
         api_key = bg_params.api_key
+        job_status_update_url = bg_params.job_status_update_url
+        job_results_url = bg_params.job_results_url
 
         # Step 5: Launch background task (don't await!)
         # The SSE connection will close immediately after returning ack_message
@@ -415,6 +416,8 @@ class AsyncAgent(A2AAgentBase):
                 file_access_token=context.file_access_token,
                 auth_token=context.auth_token,
                 extensions=context.extensions,
+                job_status_update_url=job_status_update_url,
+                job_results_url=job_results_url,
             )
         )
 
@@ -443,6 +446,8 @@ class AsyncAgent(A2AAgentBase):
         file_access_token: str | None = None,
         auth_token: str | None = None,
         extensions: list[str] | None = None,
+        job_status_update_url: str | None = None,
+        job_results_url: str | None = None,
     ) -> None:
         """
         Run background work with POST updates.
@@ -463,16 +468,18 @@ class AsyncAgent(A2AAgentBase):
             file_access_token: Optional file access token from extensions
             auth_token: Optional JWT token for inter-agent calls
             extensions: Optional list of extension URIs from message
+            job_status_update_url: URL for intermediate status updates (from platform)
+            job_results_url: URL for final job results webhook (from platform)
         """
         # Get the current event loop for sync updates from ThreadPoolExecutor
         loop = asyncio.get_event_loop()
 
-        # Create update client (owns HTTP connection)
-        base_url = os.getenv("BACKGROUND_UPDATE_URL", "https://api.healthuniverse.com")
+        # Create update client with callback URLs from platform
         update_client = BackgroundUpdateClient(
             api_key=api_key,
             job_id=job_id,
-            base_url=base_url,
+            job_status_update_url=job_status_update_url,
+            job_results_url=job_results_url,
         )
 
         background_context = None

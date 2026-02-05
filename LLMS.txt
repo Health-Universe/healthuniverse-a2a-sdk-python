@@ -163,8 +163,8 @@ serve_multi_agents({
 ## Environment Variables
 
 - `HU_APP_URL` or `A2A_BASE_URL` - Agent base URL
-- `HU_NESTJS_URL` - Document API URL (default: https://api.healthuniverse.com)
-- `BACKGROUND_UPDATE_URL` - Update API URL (default: https://api.healthuniverse.com)
+- `HU_NESTJS_URL` - Document API URL (default: https://apps.healthuniverse.com/api/v1)
+- `BACKGROUND_UPDATE_URL` - Update API URL (default: https://apps.healthuniverse.com/api/v1)
 - `LOCAL_AGENT_BASE_URL` - Local agent URL (default: http://localhost:8501)
 - `HOST` - Server host (default: 0.0.0.0)
 - `PORT` or `AGENT_PORT` - Server port (default: 8000)

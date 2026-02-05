@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -37,20 +36,30 @@ class BackgroundUpdateClient:
 
     Used internally by AsyncAgent to send progress updates
     and artifacts during long-running task processing.
+
+    The callback URLs are passed from the platform at runtime, not hardcoded.
     """
 
-    def __init__(self, job_id: str, api_key: str, base_url: str):
+    def __init__(
+        self,
+        job_id: str,
+        api_key: str,
+        job_status_update_url: str | None = None,
+        job_results_url: str | None = None,
+    ):
         """
         Initialize update client.
 
         Args:
             job_id: Background job ID
             api_key: API key for authentication
-            base_url: Base URL of the Health Universe backend
+            job_status_update_url: URL for intermediate status updates (from platform)
+            job_results_url: URL for final job results webhook (from platform)
         """
         self.job_id = job_id
         self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        self.job_status_update_url = job_status_update_url
+        self.job_results_url = job_results_url
         self.client = httpx.AsyncClient(timeout=10.0)
 
     async def post_update(
@@ -73,7 +82,10 @@ class BackgroundUpdateClient:
             artifact_data: Artifact data dict
             importance: Update importance level (default: INFO)
         """
-        endpoint = f"{self.base_url}/a2a/task-updates"
+        # Skip if no status update URL provided
+        if not self.job_status_update_url:
+            logger.debug(f"No job_status_update_url, skipping update for job {self.job_id}")
+            return
 
         payload: dict[str, Any] = {
             "job_id": self.job_id,
@@ -92,7 +104,7 @@ class BackgroundUpdateClient:
 
         try:
             response = await self.client.post(
-                endpoint,
+                self.job_status_update_url,
                 json=payload,
                 headers={"X-API-Key": self.api_key},
             )
@@ -106,32 +118,66 @@ class BackgroundUpdateClient:
 
     async def post_completion(self, message: str) -> None:
         """
-        POST final completion status.
+        POST final completion status to the job results URL.
 
         Args:
             message: Final completion message
         """
-        await self.post_update(
-            update_type="status",
-            task_status="completed",
-            status_message=message,
-            progress=1.0,
-            importance=UpdateImportance.NOTICE,
-        )
+        # Skip if no results URL provided
+        if not self.job_results_url:
+            logger.debug(f"No job_results_url, skipping completion for job {self.job_id}")
+            return
+
+        payload: dict[str, Any] = {
+            "job_id": self.job_id,
+            "task_status": "completed",
+            "status_message": message,
+            "progress": 1.0,
+        }
+
+        try:
+            response = await self.client.post(
+                self.job_results_url,
+                json=payload,
+                headers={"X-API-Key": self.api_key},
+            )
+            response.raise_for_status()
+            logger.debug(f"Posted completion for job {self.job_id}")
+        except httpx.HTTPError as e:
+            logger.warning(f"Failed to POST completion for job {self.job_id}: {e}")
+        except Exception as e:
+            logger.warning(f"Unexpected error posting completion for job {self.job_id}: {e}")
 
     async def post_failure(self, error: str) -> None:
         """
-        POST failure status.
+        POST failure status to the job results URL.
 
         Args:
             error: Error message
         """
-        await self.post_update(
-            update_type="status",
-            task_status="failed",
-            status_message=f"Task failed: {error}",
-            importance=UpdateImportance.ERROR,
-        )
+        # Skip if no results URL provided
+        if not self.job_results_url:
+            logger.debug(f"No job_results_url, skipping failure for job {self.job_id}")
+            return
+
+        payload: dict[str, Any] = {
+            "job_id": self.job_id,
+            "task_status": "failed",
+            "status_message": f"Task failed: {error}",
+        }
+
+        try:
+            response = await self.client.post(
+                self.job_results_url,
+                json=payload,
+                headers={"X-API-Key": self.api_key},
+            )
+            response.raise_for_status()
+            logger.debug(f"Posted failure for job {self.job_id}")
+        except httpx.HTTPError as e:
+            logger.warning(f"Failed to POST failure for job {self.job_id}: {e}")
+        except Exception as e:
+            logger.warning(f"Unexpected error posting failure for job {self.job_id}: {e}")
 
     async def close(self) -> None:
         """Close the HTTP client connection."""
@@ -527,10 +573,8 @@ def create_background_updater(
         task_id: Task ID
         context_id: Context ID
         loop: Event loop for sync updates (optional)
-        job_status_update_url: URL for intermediate status updates (optional,
-            defaults to JOB_STATUS_UPDATE_URL env var)
-        job_results_url: URL for final job results webhook (optional,
-            defaults to JOB_RESULTS_URL env var)
+        job_status_update_url: URL for intermediate status updates (from platform)
+        job_results_url: URL for final job results webhook (from platform)
 
     Returns:
         Configured BackgroundTaskUpdater instance
@@ -538,8 +582,8 @@ def create_background_updater(
     queue = BackgroundArtifactQueue(
         api_key=api_key,
         job_id=job_id,
-        job_status_update_url=job_status_update_url or os.getenv("JOB_STATUS_UPDATE_URL"),
-        job_results_url=job_results_url or os.getenv("JOB_RESULTS_URL"),
+        job_status_update_url=job_status_update_url,
+        job_results_url=job_results_url,
     )
 
     return BackgroundTaskUpdater(

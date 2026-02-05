@@ -229,7 +229,7 @@ class BackgroundContext(BaseContext):
             from health_universe_a2a.documents import DocumentClient
 
             self._documents = DocumentClient(
-                base_url=os.getenv("HU_NESTJS_URL", "https://api.healthuniverse.com"),
+                base_url=os.getenv("HU_NESTJS_URL", "https://apps.healthuniverse.com/api/v1"),
                 access_token=self.file_access_token or "",
                 thread_id=self.thread_id or "",
             )

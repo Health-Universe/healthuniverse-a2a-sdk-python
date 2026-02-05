@@ -1,7 +1,6 @@
 """A2A Extension type definitions and constants for Health Universe platform."""
 
 import logging
-import os
 import uuid
 from enum import Enum
 from typing import Any
@@ -104,10 +103,14 @@ class BackgroundJobExtensionParams(BaseModel):
     Attributes:
         api_key: API key for POSTing updates to backend webhook
         job_id: Unique job ID for tracking this background task
+        job_status_update_url: URL for intermediate status updates (passed from platform)
+        job_results_url: URL for final job results webhook (passed from platform)
     """
 
     api_key: str
     job_id: str
+    job_status_update_url: str | None = None
+    job_results_url: str | None = None
 
 
 class BackgroundJobExtensionResponse(BaseModel):
@@ -211,8 +214,8 @@ async def notify_on_task_completion(
     Args:
         api_key: API key for authentication (from BackgroundJobExtensionParams)
         result: The task results including job_id, state, and artifacts
-        url: Optional custom webhook URL. If not provided, uses CALLBACK_URL
-            environment variable or default Health Universe endpoint.
+        url: Webhook URL passed from the platform (job_results_url).
+            If not provided, the notification is skipped.
 
     Note:
         If api_key is "local-mode-key", the webhook notification is skipped
@@ -226,6 +229,7 @@ async def notify_on_task_completion(
                 state=TaskState.completed,
                 artifacts=artifacts,
             ),
+            url=bg_params.job_results_url,
         )
     """
     # Skip webhook notification in local mode
@@ -234,7 +238,8 @@ async def notify_on_task_completion(
         return
 
     if url is None:
-        url = os.getenv("CALLBACK_URL", "https://apps.healthuniverse.com/graph/job-results")
+        logger.debug("No job_results_url provided, skipping webhook notification")
+        return
 
     headers: dict[str, str] = {"X-Api-Key": api_key}
 

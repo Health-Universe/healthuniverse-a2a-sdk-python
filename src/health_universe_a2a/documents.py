@@ -135,7 +135,7 @@ class DocumentClient:
         Initialize DocumentClient.
 
         Args:
-            base_url: NestJS API base URL (e.g., "https://api.healthuniverse.com")
+            base_url: NestJS API base URL (e.g., "https://apps.healthuniverse.com/api/v1")
             access_token: JWT access token for authentication
             thread_id: Thread ID for document operations
         """

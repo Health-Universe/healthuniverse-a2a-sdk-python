@@ -233,11 +233,10 @@ with ThreadPoolExecutor(max_workers=4) as executor:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HU_APP_URL` | Agent base URL for agent card | `http://localhost:8000` |
-| `HU_NESTJS_URL` | NestJS API URL for document operations | `https://api.healthuniverse.com` |
+| `HU_NESTJS_URL` | NestJS API URL for document operations | `https://apps.healthuniverse.com/api/v1` |
 | `AGENT_REGISTRY_PATH` | Path to agents.json registry | None |
-| `BACKGROUND_UPDATE_URL` | URL for POST updates | `https://api.healthuniverse.com` |
-| `JOB_STATUS_UPDATE_URL` | URL for job status webhooks | None |
-| `JOB_RESULTS_URL` | URL for job results webhooks | None |
+
+Note: Callback URLs for background job status updates (`job_status_update_url`) and results (`job_results_url`) are passed from the platform via `BackgroundJobExtensionParams`, not from environment variables.
 
 ## Common Pitfalls
 

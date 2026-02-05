@@ -19,7 +19,8 @@ class MockBackgroundUpdateClient(BackgroundUpdateClient):
         # Don't call super().__init__() to avoid actual HTTP client creation
         self.job_id = "mock-job"
         self.api_key = "mock-key"
-        self.base_url = "http://mock"
+        self.job_status_update_url = "http://mock-status"
+        self.job_results_url = "http://mock-results"
         self.client = MagicMock()
         self._post_completion_called = False
         self._post_failure_called = False
