@@ -5,7 +5,7 @@ import logging
 import os
 import uuid
 from abc import abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from a2a.types import AgentExtension, Message, Part, Role, TaskState, TextPart
 
@@ -20,6 +20,9 @@ from health_universe_a2a.types.validation import ValidationRejected
 from health_universe_a2a.update_client import (
     BackgroundUpdateClient,
 )
+
+if TYPE_CHECKING:
+    from health_universe_a2a.inspect_ai.logger import InspectLogger
 
 logger = logging.getLogger(__name__)
 
@@ -451,6 +454,12 @@ class AsyncAgent(A2AAgentBase):
         and ensures proper cleanup. It's designed to be called with asyncio.create_task()
         so the SSE connection can close immediately after ack.
 
+        When Inspect AI logging is enabled, this method also:
+        - Creates an InspectLogger for observability
+        - Passes it to the BackgroundContext
+        - Logs task lifecycle events
+        - Writes .eval files for inspection via `inspect view`
+
         Args:
             message: The message to process
             job_id: Background job ID
@@ -476,9 +485,34 @@ class AsyncAgent(A2AAgentBase):
         )
 
         background_context = None
+        inspect_logger: "InspectLogger | None" = None
+
+        # Create InspectLogger if enabled
+        if self.inspect_logging_enabled():
+            try:
+                from health_universe_a2a.inspect_ai.logger import InspectLogger, set_current_logger
+
+                inspect_logger = InspectLogger(
+                    task_name=self.get_agent_name(),
+                    model=self.get_model_name(),
+                    log_dir=self.get_inspect_log_dir(),
+                    input_description=message[:500] if message else "A2A Agent Execution",
+                )
+
+                # Set as current logger so SDK operations can find it
+                set_current_logger(inspect_logger)
+
+                self.logger.debug(f"InspectLogger created for job {job_id}")
+            except ImportError:
+                self.logger.warning(
+                    "inspect_ai not available, Inspect logging disabled. "
+                    "Install with: pip install inspect-ai"
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to create InspectLogger: {e}")
 
         try:
-            # Build background context with POST updater
+            # Build background context with POST updater and inspect logger
             background_context = BackgroundContext(
                 user_id=user_id,
                 thread_id=thread_id,
@@ -489,6 +523,7 @@ class AsyncAgent(A2AAgentBase):
                 job_id=job_id,
                 update_client=update_client,
                 loop=loop,  # Enable sync updates from ThreadPoolExecutor
+                inspect_logger=inspect_logger,
             )
 
             # Get timeout from agent configuration
@@ -496,6 +531,10 @@ class AsyncAgent(A2AAgentBase):
             self.logger.info(
                 f"Background processing started for job {job_id} with {max_duration}s timeout"
             )
+
+            # Log task start to Inspect
+            if inspect_logger:
+                inspect_logger.log_task_state("working", "Starting background task")
 
             # Wrap processing with timeout enforcement
             async def _process_with_hooks() -> str:
@@ -517,6 +556,10 @@ class AsyncAgent(A2AAgentBase):
                 )
                 self.logger.error(f"Background task timed out for job {job_id}: {timeout_msg}")
 
+                # Log timeout to Inspect
+                if inspect_logger:
+                    inspect_logger.log_task_state("failed", timeout_msg)
+
                 # Call error hook for timeout
                 custom_error = await self.on_task_error(
                     message, TimeoutError(timeout_msg), background_context
@@ -527,12 +570,20 @@ class AsyncAgent(A2AAgentBase):
                 await update_client.post_failure(error_message)
                 return
 
+            # Log success to Inspect
+            if inspect_logger:
+                inspect_logger.log_task_state("completed", "Task completed successfully")
+
             # POST completion
             self.logger.info(f"Background processing completed for job {job_id}")
             await update_client.post_completion(final_message)
 
         except Exception as e:
             self.logger.error(f"Background work failed for job {job_id}: {e}", exc_info=True)
+
+            # Log error to Inspect
+            if inspect_logger:
+                inspect_logger.log_task_state("failed", str(e))
 
             # Call error hook to get custom error message
             if background_context:
@@ -546,5 +597,19 @@ class AsyncAgent(A2AAgentBase):
             await update_client.post_failure(error_message)
 
         finally:
+            # Finalize InspectLogger and write .eval file
+            if inspect_logger:
+                try:
+                    from health_universe_a2a.inspect_ai.logger import set_current_logger
+
+                    # Clear current logger
+                    set_current_logger(None)
+
+                    # Finalize writes the .eval file
+                    inspect_logger.finalize()
+                    self.logger.debug(f"InspectLogger finalized for job {job_id}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to finalize InspectLogger: {e}")
+
             # Always close HTTP client to prevent connection leaks
             await update_client.close()

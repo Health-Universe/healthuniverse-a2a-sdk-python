@@ -27,12 +27,16 @@ Typical usage (via context.document_client):
 import hashlib
 import logging
 import re
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import SecretStr
 
 from health_universe_a2a.nest_client import NestJSClient
+
+if TYPE_CHECKING:
+    from health_universe_a2a.inspect_ai.logger import InspectLogger
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +134,13 @@ class DocumentClient:
         thread_id: The thread ID for document operations
     """
 
-    def __init__(self, base_url: str, access_token: str, thread_id: str):
+    def __init__(
+        self,
+        base_url: str,
+        access_token: str,
+        thread_id: str,
+        inspect_logger: "InspectLogger | None" = None,
+    ):
         """
         Initialize DocumentClient.
 
@@ -138,8 +148,10 @@ class DocumentClient:
             base_url: NestJS API base URL (e.g., "https://api.healthuniverse.com")
             access_token: JWT access token for authentication
             thread_id: Thread ID for document operations
+            inspect_logger: Optional InspectLogger for observability
         """
         self.thread_id = thread_id
+        self._inspect_logger = inspect_logger
         self._client = NestJSClient(
             base_url=base_url,
             token=SecretStr(access_token),
@@ -166,11 +178,20 @@ class DocumentClient:
             for doc in docs:
                 print(f"- {doc.name} ({doc.document_type}, v{doc.latest_version})")
         """
+        start_time = time.time()
         raw_docs = await self._client.list_documents(self.thread_id)
         docs = [Document.from_dict(d) for d in raw_docs]
 
         if not include_hidden:
             docs = [d for d in docs if d.user_visible]
+
+        # Log to Inspect if available
+        if self._inspect_logger:
+            self._inspect_logger.log_document_op(
+                operation="list",
+                metadata={"count": len(docs), "include_hidden": include_hidden},
+                duration=time.time() - start_time,
+            )
 
         return docs
 
@@ -241,12 +262,32 @@ class DocumentClient:
             with open("output.pdf", "wb") as f:
                 f.write(pdf_bytes)
         """
-        url_info = await self._client.get_download_url(document_id)
-        presigned_url = url_info.get("presignedUrl")
-        if not presigned_url:
-            raise ValueError(f"Failed to get download URL for document {document_id}")
+        start_time = time.time()
+        error_msg = None
+        content: bytes = b""
 
-        return await self._client.download_from_s3(presigned_url)
+        try:
+            url_info = await self._client.get_download_url(document_id)
+            presigned_url = url_info.get("presignedUrl")
+            if not presigned_url:
+                error_msg = f"Failed to get download URL for document {document_id}"
+                raise ValueError(error_msg)
+
+            content = await self._client.download_from_s3(presigned_url)
+            return content
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            # Log to Inspect if available
+            if self._inspect_logger:
+                self._inspect_logger.log_document_op(
+                    operation="download",
+                    doc_id=document_id,
+                    size=len(content) if content else None,
+                    duration=time.time() - start_time,
+                    error=error_msg,
+                )
 
     async def download_text(self, document_id: str, encoding: str = "utf-8") -> str:
         """
@@ -330,6 +371,8 @@ class DocumentClient:
                 filename="report.pdf"
             )
         """
+        start_time = time.time()
+
         # Convert string content to bytes
         if isinstance(content, str):
             content_bytes = content.encode("utf-8")
@@ -377,6 +420,19 @@ class DocumentClient:
 
         # Step 3: Complete the version
         await self._client.complete_version(document_id, upload_id)
+
+        duration = time.time() - start_time
+
+        # Log to Inspect if available
+        if self._inspect_logger:
+            self._inspect_logger.log_document_op(
+                operation="write",
+                doc_id=document_id,
+                doc_name=name,
+                size=len(content_bytes),
+                duration=duration,
+                metadata={"filename": filename, "document_type": document_type},
+            )
 
         # Return Document object
         return Document(

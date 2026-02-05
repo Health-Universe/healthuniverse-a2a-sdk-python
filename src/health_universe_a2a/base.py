@@ -470,6 +470,71 @@ class A2AAgentBase(AgentExecutor, ABC):
         """Whether this agent supports push notifications. Default: False"""
         return False
 
+    # Inspect AI configuration methods
+
+    def get_inspect_log_dir(self) -> str:
+        """
+        Return directory for Inspect AI .eval log files.
+
+        Override to customize log location.
+
+        Returns:
+            Log directory path (default: INSPECT_LOG_DIR env var or ./inspect_logs)
+
+        Example:
+            def get_inspect_log_dir(self) -> str:
+                return "/var/log/my-agent/inspect"
+        """
+        return os.getenv("INSPECT_LOG_DIR", "./inspect_logs")
+
+    def get_model_name(self) -> str:
+        """
+        Return model name for Inspect AI logging.
+
+        Override if your agent uses a specific LLM model.
+
+        Returns:
+            Model name (default: "unknown")
+
+        Example:
+            def get_model_name(self) -> str:
+                return "gpt-4o"
+        """
+        return "unknown"
+
+    def inspect_logging_enabled(self) -> bool:
+        """
+        Check if Inspect AI logging is enabled.
+
+        Override to disable logging for specific agents.
+
+        Returns:
+            True if INSPECT_LOGGING_ENABLED is "true" (default), False otherwise
+
+        Example:
+            def inspect_logging_enabled(self) -> bool:
+                # Disable in development
+                return os.getenv("ENV") == "production"
+        """
+        return os.getenv("INSPECT_LOGGING_ENABLED", "true").lower() == "true"
+
+    def inspect_eval_enabled(self) -> bool:
+        """
+        Check if Inspect eval mode is enabled.
+
+        When enabled, agents run through inspect_eval() for full observability.
+        When disabled, agents use InspectLogger directly (faster but less features).
+
+        Returns:
+            True if INSPECT_EVAL_MODE is "true" (default), False otherwise
+
+        Example:
+            def inspect_eval_enabled(self) -> bool:
+                # Disable for latency-sensitive operations
+                return False
+        """
+        return os.getenv("INSPECT_EVAL_MODE", "true").lower() == "true"
+
     # Optional tools and LLM integration
 
     def get_tools(self) -> list[Any]:

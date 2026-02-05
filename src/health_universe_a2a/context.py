@@ -33,6 +33,7 @@ from health_universe_a2a.update_client import BackgroundUpdateClient
 
 if TYPE_CHECKING:
     from health_universe_a2a.documents import DocumentClient
+    from health_universe_a2a.inspect_ai.logger import InspectLogger
     from health_universe_a2a.inter_agent import InterAgentClient
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,9 @@ class BaseContext(BaseModel):
         """
         from health_universe_a2a.inter_agent import InterAgentClient
 
+        # Get inspect_logger if available (BackgroundContext has it, BaseContext doesn't)
+        inspect_logger = getattr(self, "inspect_logger", None)
+
         return InterAgentClient(
             agent_identifier=agent_identifier,
             auth_token=self.auth_token,
@@ -146,6 +150,7 @@ class BaseContext(BaseModel):
             or os.getenv("LOCAL_AGENT_BASE_URL", "http://localhost:8501"),
             timeout=timeout,
             max_retries=max_retries,
+            inspect_logger=inspect_logger,
         )
 
 
@@ -194,6 +199,7 @@ class BackgroundContext(BaseContext):
     update_client: BackgroundUpdateClient
     job_id: str
     loop: Any | None = None  # asyncio event loop for sync updates
+    inspect_logger: "InspectLogger | None" = None  # Inspect AI logger for observability
     _documents: "DocumentClient | None" = None
 
     @property
@@ -232,6 +238,7 @@ class BackgroundContext(BaseContext):
                 base_url=os.getenv("HU_NESTJS_URL", "https://api.healthuniverse.com"),
                 access_token=self.file_access_token or "",
                 thread_id=self.thread_id or "",
+                inspect_logger=self.inspect_logger,
             )
         return self._documents
 
@@ -276,6 +283,14 @@ class BackgroundContext(BaseContext):
         Note:
             Updates are POSTed to the backend and persisted in the database.
         """
+        # Log to Inspect AI if logger is available
+        if self.inspect_logger:
+            self.inspect_logger.log_progress_update(
+                message=message,
+                progress=progress,
+                importance=importance.value if hasattr(importance, "value") else str(importance),
+            )
+
         await self.update_client.post_update(
             update_type="progress",
             status_message=message,

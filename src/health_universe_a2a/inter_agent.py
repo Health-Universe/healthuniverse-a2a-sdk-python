@@ -4,12 +4,16 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from a2a.types import DataPart, Message, Part, Role, TextPart
+
+if TYPE_CHECKING:
+    from health_universe_a2a.inspect_ai.logger import InspectLogger
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +333,7 @@ class InterAgentClient:
         timeout: float = 30.0,
         max_retries: int = 3,
         retry_backoff_base: float = 1.0,
+        inspect_logger: "InspectLogger | None" = None,
     ):
         """
         Initialize inter-agent client.
@@ -341,6 +346,7 @@ class InterAgentClient:
             timeout: Default timeout in seconds (default: 30.0, increase for slow agents)
             max_retries: Max retry attempts for transient errors (default: 3)
             retry_backoff_base: Base for exponential backoff in seconds (default: 1.0)
+            inspect_logger: Optional InspectLogger for observability
         """
         self.agent_identifier = agent_identifier
         self.auth_token = auth_token
@@ -351,6 +357,7 @@ class InterAgentClient:
         self.max_retries = max_retries
         self.retry_backoff_base = retry_backoff_base
         self.target_url = self._resolve_target_url()
+        self._inspect_logger = inspect_logger
 
     @staticmethod
     def _load_agent_registry() -> dict[str, str]:
@@ -547,31 +554,50 @@ class InterAgentClient:
             print(response.text)  # Convenient text access
             print(response.raw_response)  # Full A2A response
         """
-        # Build A2A message
-        text_part = TextPart(text=message)
-        a2a_message = Message(
-            message_id=str(uuid.uuid4()), role=Role.user, parts=[Part(root=text_part)]
-        )
+        start_time = time.time()
+        error_msg = None
+        agent_response: AgentResponse | None = None
 
-        # Build request
-        headers = {"Content-Type": "application/json"}
-        if self.auth_token:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
+        try:
+            # Build A2A message
+            text_part = TextPart(text=message)
+            a2a_message = Message(
+                message_id=str(uuid.uuid4()), role=Role.user, parts=[Part(root=text_part)]
+            )
 
-        request_timeout = timeout if timeout is not None else self.timeout
+            # Build request
+            headers = {"Content-Type": "application/json"}
+            if self.auth_token:
+                headers["Authorization"] = f"Bearer {self.auth_token}"
 
-        # Call with retry
-        response = await self._call_with_retry(
-            "POST",
-            f"{self.target_url}/a2a/v1/messages",
-            json=a2a_message.model_dump(by_alias=True),
-            headers=headers,
-            timeout=request_timeout,
-        )
+            request_timeout = timeout if timeout is not None else self.timeout
 
-        # Parse and return response
-        result = response.json()
-        return AgentResponse(result)
+            # Call with retry
+            response = await self._call_with_retry(
+                "POST",
+                f"{self.target_url}/a2a/v1/messages",
+                json=a2a_message.model_dump(by_alias=True),
+                headers=headers,
+                timeout=request_timeout,
+            )
+
+            # Parse and return response
+            result = response.json()
+            agent_response = AgentResponse(result)
+            return agent_response
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            # Log to Inspect if available
+            if self._inspect_logger:
+                self._inspect_logger.log_inter_agent_call(
+                    agent=self.agent_identifier,
+                    message=message[:500] if message else "",  # Truncate for logging
+                    response=agent_response.text[:500] if agent_response else None,
+                    duration=time.time() - start_time,
+                    error=error_msg,
+                )
 
     async def call_with_data(self, data: Any, timeout: float | None = None) -> AgentResponse:
         """
@@ -593,31 +619,52 @@ class InterAgentClient:
             print(response.data)  # Convenient data access
             print(response.parts)  # All response parts
         """
-        # Build A2A message with DataPart
-        data_part = DataPart(data=data)
-        a2a_message = Message(
-            message_id=str(uuid.uuid4()), role=Role.user, parts=[Part(root=data_part)]
-        )
+        start_time = time.time()
+        error_msg = None
+        agent_response: AgentResponse | None = None
 
-        # Build request
-        headers = {"Content-Type": "application/json"}
-        if self.auth_token:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
+        try:
+            # Build A2A message with DataPart
+            data_part = DataPart(data=data)
+            a2a_message = Message(
+                message_id=str(uuid.uuid4()), role=Role.user, parts=[Part(root=data_part)]
+            )
 
-        request_timeout = timeout if timeout is not None else self.timeout
+            # Build request
+            headers = {"Content-Type": "application/json"}
+            if self.auth_token:
+                headers["Authorization"] = f"Bearer {self.auth_token}"
 
-        # Call with retry
-        response = await self._call_with_retry(
-            "POST",
-            f"{self.target_url}/a2a/v1/messages",
-            json=a2a_message.model_dump(by_alias=True),
-            headers=headers,
-            timeout=request_timeout,
-        )
+            request_timeout = timeout if timeout is not None else self.timeout
 
-        # Parse and return response
-        result = response.json()
-        return AgentResponse(result)
+            # Call with retry
+            response = await self._call_with_retry(
+                "POST",
+                f"{self.target_url}/a2a/v1/messages",
+                json=a2a_message.model_dump(by_alias=True),
+                headers=headers,
+                timeout=request_timeout,
+            )
+
+            # Parse and return response
+            result = response.json()
+            agent_response = AgentResponse(result)
+            return agent_response
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            # Log to Inspect if available
+            if self._inspect_logger:
+                # Truncate data representation for logging
+                data_str = str(data)[:500] if data else ""
+                self._inspect_logger.log_inter_agent_call(
+                    agent=self.agent_identifier,
+                    message=f"[DATA] {data_str}",
+                    response=agent_response.text[:500] if agent_response else None,
+                    duration=time.time() - start_time,
+                    error=error_msg,
+                )
 
     async def close(self) -> None:
         """
