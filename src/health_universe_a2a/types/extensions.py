@@ -31,18 +31,21 @@ class UpdateImportance(str, Enum):
     how updates are propagated to the Health Universe Navigator UI:
 
     - ERROR: Something went wrong (pushed to Navigator)
-    - NOTICE: Important milestone or significant progress point (pushed to Navigator)
-    - INFO: Standard progress update (default, stored but not pushed)
+    - NOTICE: Standard progress update (default, pushed to Navigator)
+    - INFO: Verbose logging (stored but not pushed to Navigator)
     - DEBUG: Detailed diagnostic information (stored but not pushed)
 
-    Only NOTICE and ERROR level updates are pushed to the Navigator UI in real-time.
+    NOTICE and ERROR level updates are pushed to the Navigator UI in real-time.
     All updates are stored in the A2A system for debugging and audit purposes.
 
     Example:
+        # Default importance (NOTICE) - shown in Navigator
+        await context.update_progress("Processing data...", progress=0.5)
+
+        # Verbose logging - not shown in Navigator UI
         await context.update_progress(
-            "Critical milestone reached",
-            progress=0.5,
-            importance=UpdateImportance.NOTICE
+            "Debug: processed 1000 rows",
+            importance=UpdateImportance.INFO
         )
     """
 
@@ -50,6 +53,21 @@ class UpdateImportance(str, Enum):
     NOTICE = "notice"
     INFO = "info"
     DEBUG = "debug"
+
+
+class NavigatorTaskStatus(str, Enum):
+    """
+    Task status values for the Health Universe Navigator UI.
+
+    These map from A2A TaskState to Navigator-compatible status strings.
+    The Navigator frontend expects these specific values.
+
+    Note: Navigator currently maps canceled and rejected to "failed".
+    """
+
+    WORKING = "working"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class FileAccessExtensionContext(BaseModel):

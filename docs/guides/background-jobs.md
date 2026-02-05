@@ -59,10 +59,10 @@ await context.update_progress(
 
 Available levels:
 
-- `ERROR` - Critical issues
-- `NOTICE` - Important information (pushed to Navigator UI)
-- `INFO` - General progress (default)
-- `DEBUG` - Detailed debugging info
+- `ERROR` - Critical issues (pushed to Navigator UI)
+- `NOTICE` - Standard progress (default, pushed to Navigator UI)
+- `INFO` - Verbose logging (stored but not pushed)
+- `DEBUG` - Detailed debugging info (stored but not pushed)
 
 ## Adding Artifacts
 

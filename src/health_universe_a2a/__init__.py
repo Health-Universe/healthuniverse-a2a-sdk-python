@@ -30,7 +30,7 @@ from health_universe_a2a.server import (
     create_multi_agent_app,
     serve_multi_agents,
 )
-from health_universe_a2a.types.extensions import UpdateImportance
+from health_universe_a2a.types.extensions import NavigatorTaskStatus, UpdateImportance
 from health_universe_a2a.types.validation import (
     ValidationAccepted,
     ValidationRejected,
@@ -51,6 +51,7 @@ __all__ = [
     "ValidationAccepted",
     "ValidationRejected",
     "UpdateImportance",
+    "NavigatorTaskStatus",
     "create_app",
     "serve_multi_agents",
     # Aliases (for explicit imports)

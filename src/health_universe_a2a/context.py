@@ -240,7 +240,7 @@ class BackgroundContext(BaseContext):
         message: str,
         progress: float | None = None,
         status: str = "working",
-        importance: UpdateImportance = UpdateImportance.INFO,
+        importance: UpdateImportance = UpdateImportance.NOTICE,
     ) -> None:
         """
         Send a progress update (POSTed to backend).
@@ -252,11 +252,12 @@ class BackgroundContext(BaseContext):
             message: Status message to display
             progress: Progress from 0.0 to 1.0 (optional)
             status: Task status (default: "working")
-            importance: Update importance level (default: INFO).
-                Only NOTICE and ERROR are pushed to Navigator UI in real-time.
+            importance: Update importance level (default: NOTICE).
+                NOTICE and ERROR are pushed to Navigator UI in real-time.
+                Use INFO or DEBUG for verbose logging that shouldn't appear in UI.
 
         Example:
-            # Simple progress update
+            # Simple progress update (shown in Navigator by default)
             await context.update_progress("Loading data...", 0.2)
 
             # Progress with percentage
@@ -266,11 +267,10 @@ class BackgroundContext(BaseContext):
                     progress=(i+1)/len(batches)
                 )
 
-            # Important milestone - will show in Navigator UI
+            # Verbose logging - not shown in Navigator UI
             await context.update_progress(
-                "Analysis complete!",
-                progress=1.0,
-                importance=UpdateImportance.NOTICE
+                "Debug: processed row details...",
+                importance=UpdateImportance.INFO
             )
 
         Note:
@@ -289,7 +289,7 @@ class BackgroundContext(BaseContext):
         message: str,
         progress: float | None = None,
         status: str = "working",
-        importance: UpdateImportance = UpdateImportance.INFO,
+        importance: UpdateImportance = UpdateImportance.NOTICE,
     ) -> None:
         """
         Synchronous wrapper for update_progress.
@@ -301,7 +301,7 @@ class BackgroundContext(BaseContext):
             message: Status message
             progress: Progress from 0.0 to 1.0 (optional)
             status: Task status (default: "working")
-            importance: Update importance level (default: INFO)
+            importance: Update importance level (default: NOTICE)
 
         Example:
             def cpu_intensive_work(context: AgentContext, data):

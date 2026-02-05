@@ -20,9 +20,16 @@ from a2a.types import (
 from health_universe_a2a.types.extensions import (
     HU_LOG_LEVEL_EXTENSION_URI,
     BackgroundTaskResults,
+    NavigatorTaskStatus,
     UpdateImportance,
     notify_on_task_completion,
 )
+
+# Terminal statuses that signal job completion to Navigator
+_TERMINAL_STATUSES = {
+    NavigatorTaskStatus.COMPLETED,
+    NavigatorTaskStatus.FAILED,
+}
 
 if TYPE_CHECKING:
     pass
@@ -69,7 +76,7 @@ class BackgroundUpdateClient:
         task_status: str | None = None,
         status_message: str | None = None,
         artifact_data: dict[str, Any] | None = None,
-        importance: UpdateImportance = UpdateImportance.INFO,
+        importance: UpdateImportance = UpdateImportance.NOTICE,
     ) -> None:
         """
         POST an update to the backend.
@@ -80,7 +87,7 @@ class BackgroundUpdateClient:
             task_status: Task status (e.g., "working", "completed")
             status_message: Status message
             artifact_data: Artifact data dict
-            importance: Update importance level (default: INFO)
+            importance: Update importance level (default: NOTICE)
         """
         # Skip if no status update URL provided
         if not self.job_status_update_url:
@@ -118,19 +125,43 @@ class BackgroundUpdateClient:
 
     async def post_completion(self, message: str) -> None:
         """
-        POST final completion status to the job results URL.
+        POST final completion status to both status update and results URLs.
+
+        This ensures Navigator receives the terminal status and stops the progress bar.
 
         Args:
             message: Final completion message
         """
-        # Skip if no results URL provided
+        # Always send terminal status update to Navigator (prevents hanging progress bar)
+        if self.job_status_update_url:
+            status_payload: dict[str, Any] = {
+                "job_id": self.job_id,
+                "task_status": NavigatorTaskStatus.COMPLETED.value,
+                "progress": 1.0,
+                "status_message": message,
+                "is_terminal": True,
+            }
+            try:
+                response = await self.client.post(
+                    self.job_status_update_url,
+                    json=status_payload,
+                    headers={"X-API-Key": self.api_key},
+                )
+                response.raise_for_status()
+                logger.debug(f"Posted terminal completion status for job {self.job_id}")
+            except httpx.HTTPError as e:
+                logger.warning(f"Failed to POST completion status for job {self.job_id}: {e}")
+            except Exception as e:
+                logger.warning(f"Unexpected error posting completion status for job {self.job_id}: {e}")
+
+        # Also send to results URL if provided
         if not self.job_results_url:
-            logger.debug(f"No job_results_url, skipping completion for job {self.job_id}")
+            logger.debug(f"No job_results_url, skipping results POST for job {self.job_id}")
             return
 
         payload: dict[str, Any] = {
             "job_id": self.job_id,
-            "task_status": "completed",
+            "task_status": NavigatorTaskStatus.COMPLETED.value,
             "status_message": message,
             "progress": 1.0,
         }
@@ -142,28 +173,54 @@ class BackgroundUpdateClient:
                 headers={"X-API-Key": self.api_key},
             )
             response.raise_for_status()
-            logger.debug(f"Posted completion for job {self.job_id}")
+            logger.debug(f"Posted completion results for job {self.job_id}")
         except httpx.HTTPError as e:
-            logger.warning(f"Failed to POST completion for job {self.job_id}: {e}")
+            logger.warning(f"Failed to POST completion results for job {self.job_id}: {e}")
         except Exception as e:
-            logger.warning(f"Unexpected error posting completion for job {self.job_id}: {e}")
+            logger.warning(f"Unexpected error posting completion results for job {self.job_id}: {e}")
 
     async def post_failure(self, error: str) -> None:
         """
-        POST failure status to the job results URL.
+        POST failure status to both status update and results URLs.
+
+        This ensures Navigator receives the terminal status and stops the progress bar.
 
         Args:
             error: Error message
         """
-        # Skip if no results URL provided
+        error_message = f"Task failed: {error}"
+
+        # Always send terminal status update to Navigator (prevents hanging progress bar)
+        if self.job_status_update_url:
+            status_payload: dict[str, Any] = {
+                "job_id": self.job_id,
+                "task_status": NavigatorTaskStatus.FAILED.value,
+                "progress": 1.0,
+                "status_message": error_message,
+                "is_terminal": True,
+            }
+            try:
+                response = await self.client.post(
+                    self.job_status_update_url,
+                    json=status_payload,
+                    headers={"X-API-Key": self.api_key},
+                )
+                response.raise_for_status()
+                logger.debug(f"Posted terminal failure status for job {self.job_id}")
+            except httpx.HTTPError as e:
+                logger.warning(f"Failed to POST failure status for job {self.job_id}: {e}")
+            except Exception as e:
+                logger.warning(f"Unexpected error posting failure status for job {self.job_id}: {e}")
+
+        # Also send to results URL if provided
         if not self.job_results_url:
-            logger.debug(f"No job_results_url, skipping failure for job {self.job_id}")
+            logger.debug(f"No job_results_url, skipping failure results POST for job {self.job_id}")
             return
 
         payload: dict[str, Any] = {
             "job_id": self.job_id,
-            "task_status": "failed",
-            "status_message": f"Task failed: {error}",
+            "task_status": NavigatorTaskStatus.FAILED.value,
+            "status_message": error_message,
         }
 
         try:
@@ -173,11 +230,11 @@ class BackgroundUpdateClient:
                 headers={"X-API-Key": self.api_key},
             )
             response.raise_for_status()
-            logger.debug(f"Posted failure for job {self.job_id}")
+            logger.debug(f"Posted failure results for job {self.job_id}")
         except httpx.HTTPError as e:
-            logger.warning(f"Failed to POST failure for job {self.job_id}: {e}")
+            logger.warning(f"Failed to POST failure results for job {self.job_id}: {e}")
         except Exception as e:
-            logger.warning(f"Unexpected error posting failure for job {self.job_id}: {e}")
+            logger.warning(f"Unexpected error posting failure results for job {self.job_id}: {e}")
 
     async def close(self) -> None:
         """Close the HTTP client connection."""
@@ -336,16 +393,16 @@ class BackgroundTaskUpdater(TaskUpdater):
         self.loop = loop
         self._event_queue = event_queue  # Store typed reference
 
-    def _map_task_state_to_status(self, state: TaskState) -> str:
-        """Map A2A TaskState to Navigator task_status string."""
-        state_mapping = {
-            TaskState.working: "working",
-            TaskState.completed: "completed",
-            TaskState.failed: "failed",
-            TaskState.canceled: "failed",
-            TaskState.rejected: "failed",
+    def _map_task_state_to_status(self, state: TaskState) -> NavigatorTaskStatus:
+        """Map A2A TaskState to Navigator task_status enum."""
+        state_mapping: dict[TaskState, NavigatorTaskStatus] = {
+            TaskState.working: NavigatorTaskStatus.WORKING,
+            TaskState.completed: NavigatorTaskStatus.COMPLETED,
+            TaskState.failed: NavigatorTaskStatus.FAILED,
+            TaskState.canceled: NavigatorTaskStatus.FAILED,
+            TaskState.rejected: NavigatorTaskStatus.FAILED,
         }
-        return state_mapping.get(state, "working")
+        return state_mapping.get(state, NavigatorTaskStatus.WORKING)
 
     def _extract_message_text(self, message: Message | None) -> str:
         """Extract text content from A2A Message object."""
@@ -376,7 +433,7 @@ class BackgroundTaskUpdater(TaskUpdater):
 
     async def _post_status_update(
         self,
-        task_status: str,
+        task_status: NavigatorTaskStatus,
         progress: float,
         message: str,
         is_terminal: bool = False,
@@ -389,7 +446,7 @@ class BackgroundTaskUpdater(TaskUpdater):
 
         payload = {
             "job_id": self._event_queue.job_id,
-            "task_status": task_status,
+            "task_status": task_status.value,
             "progress": progress,
             "status_message": message,
             "metadata": metadata or {},
@@ -419,7 +476,7 @@ class BackgroundTaskUpdater(TaskUpdater):
         timestamp: str | None = None,
         metadata: dict[str, Any] | None = None,
         progress: float = 0.0,
-        importance: UpdateImportance = UpdateImportance.INFO,
+        importance: UpdateImportance = UpdateImportance.NOTICE,
     ) -> None:
         """
         Update task status with importance level.
@@ -431,7 +488,7 @@ class BackgroundTaskUpdater(TaskUpdater):
             timestamp: Optional timestamp
             metadata: Optional metadata dict
             progress: Progress value 0.0-1.0
-            importance: Update importance level (default: INFO)
+            importance: Update importance level (default: NOTICE)
         """
         # Add importance to metadata for A2A protocol extension
         metadata = metadata or {}
@@ -452,7 +509,8 @@ class BackgroundTaskUpdater(TaskUpdater):
 
         # Only post updates for NOTICE and ERROR importance (quiet mode)
         # INFO and DEBUG updates are stored in A2A but not pushed to Navigator
-        should_post = importance in (UpdateImportance.NOTICE, UpdateImportance.ERROR)
+        # Terminal states are ALWAYS posted to prevent the progress bar from hanging
+        should_post = importance in (UpdateImportance.NOTICE, UpdateImportance.ERROR) or is_terminal
 
         if should_post:
             await self._post_status_update(
@@ -471,7 +529,7 @@ class BackgroundTaskUpdater(TaskUpdater):
         self,
         state: TaskState,
         text: str,
-        importance: UpdateImportance = UpdateImportance.INFO,
+        importance: UpdateImportance = UpdateImportance.NOTICE,
         progress: float = 0.0,
     ) -> None:
         """
@@ -483,7 +541,7 @@ class BackgroundTaskUpdater(TaskUpdater):
         Args:
             state: Task state
             text: Status message text
-            importance: Importance level (default: INFO)
+            importance: Importance level (default: NOTICE)
             progress: Progress value 0.0-1.0
         """
         if self.loop is None:

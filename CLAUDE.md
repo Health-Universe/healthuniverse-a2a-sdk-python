@@ -50,10 +50,10 @@ Health Universe platform extensions declared via `get_extensions()`:
 | Log Level | `https://healthuniverse.com/ext/log_level/v1` | Update importance levels |
 
 **UpdateImportance levels:**
-- `ERROR` - Something went wrong
-- `NOTICE` - Important milestone (pushed to Navigator UI)
-- `INFO` - Standard progress (default, stored but not pushed)
-- `DEBUG` - Diagnostic information
+- `ERROR` - Something went wrong (pushed to Navigator UI)
+- `NOTICE` - Standard progress (default, pushed to Navigator UI)
+- `INFO` - Verbose logging (stored but not pushed)
+- `DEBUG` - Diagnostic information (stored but not pushed)
 
 ## Development Conventions
 
