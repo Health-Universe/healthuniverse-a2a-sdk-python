@@ -161,8 +161,13 @@ class AsyncAgent(A2AAgentBase):
     """
 
     def supports_streaming(self) -> bool:
-        """Disable SSE streaming (uses POST updates instead)."""
-        return False
+        """Enable SSE streaming for initial acknowledgment.
+
+        AsyncAgent uses SSE for the validation/ack phase (with final=True),
+        then switches to POST-based updates for background processing.
+        The client needs streaming=True to use sendMessageStream().
+        """
+        return True
 
     def supports_push_notifications(self) -> bool:
         """Enable push notification support."""
@@ -398,6 +403,9 @@ class AsyncAgent(A2AAgentBase):
         # The SSE connection will close immediately after returning ack_message
         # Background processing continues with POST updates
         self.logger.info(f"Launching background task for job_id={job_id}, SSE will close after ack")
+        self.logger.info(f"Callback URLs - status: {job_status_update_url}, results: {job_results_url}")
+        if not job_status_update_url:
+            self.logger.warning("No job_status_update_url provided - progress updates will not be sent to Navigator")
 
         # Get task_id and context_id for background updater
         task_id = context.request_context.task_id or str(uuid.uuid4())

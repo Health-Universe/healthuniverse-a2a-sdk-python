@@ -91,7 +91,7 @@ class BackgroundUpdateClient:
         """
         # Skip if no status update URL provided
         if not self.job_status_update_url:
-            logger.debug(f"No job_status_update_url, skipping update for job {self.job_id}")
+            logger.warning(f"No job_status_update_url configured - update skipped for job {self.job_id}")
             return
 
         payload: dict[str, Any] = {
