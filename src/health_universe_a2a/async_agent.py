@@ -396,8 +396,10 @@ class AsyncAgent(A2AAgentBase):
         )
         job_id = bg_params.job_id
         api_key = bg_params.api_key
-        job_status_update_url = bg_params.job_status_update_url
-        job_results_url = bg_params.job_results_url
+
+        # Callback URLs are at the TOP LEVEL of metadata, not inside the extension params
+        job_status_update_url = metadata.get("job_status_update_url")
+        job_results_url = metadata.get("job_results_url")
 
         # Step 5: Launch background task (don't await!)
         # The SSE connection will close immediately after returning ack_message

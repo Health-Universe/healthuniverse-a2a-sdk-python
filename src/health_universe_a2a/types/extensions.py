@@ -114,21 +114,20 @@ class BackgroundJobExtensionParams(BaseModel):
     """
     Parameters for Background Job extension.
 
-    Passed in message metadata when using background job extension.
+    Passed in message metadata under the BACKGROUND_JOB_EXTENSION_URI key.
     These parameters are used to identify the job and authenticate
     POST updates to the Health Universe backend.
+
+    Note: The callback URLs (job_status_update_url, job_results_url) are passed
+    at the TOP LEVEL of metadata, not inside this extension params object.
 
     Attributes:
         api_key: API key for POSTing updates to backend webhook
         job_id: Unique job ID for tracking this background task
-        job_status_update_url: URL for intermediate status updates (passed from platform)
-        job_results_url: URL for final job results webhook (passed from platform)
     """
 
     api_key: str
     job_id: str
-    job_status_update_url: str | None = None
-    job_results_url: str | None = None
 
 
 class BackgroundJobExtensionResponse(BaseModel):
